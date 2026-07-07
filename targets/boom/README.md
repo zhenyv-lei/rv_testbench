@@ -75,7 +75,9 @@ scripts/toolchain.sh
 
 `V4_ROUND_CANDIDATES` accepts either the legacy `rounds` form or the preferred
 `mode,rounds` form. `mode` is `asm` for `spectre-v4-gadget.S` or `inline` for
-the inline-assembly gadget in `spectre-v4.c`.
+the inline-assembly gadget in `spectre-v4.c`. The current recommended V4
+inline profile is `inline,2`; see `docs/v4-inline-validation.md` for the
+repeated sweep and time-cost record.
 
 `V5_PROFILE_CANDIDATES` accepts either the legacy
 `rounds,train,ras_depth,delay` form or the preferred

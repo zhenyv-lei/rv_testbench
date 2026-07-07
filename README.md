@@ -65,6 +65,8 @@ Useful environment controls:
 - `TOOLCHAIN_TAG`: optional log/summary tag for reproducible filenames.
 - `V4_ROUND_CANDIDATES`: BOOM V4 profile sweep. Use `mode,rounds`
   entries such as `asm,1 inline,1`; legacy numeric entries map to `asm`.
+  The current recommended BOOM V4 inline profile is `inline,2`; the repeated
+  validation record is in `targets/boom/docs/v4-inline-validation.md`.
 - `V5_PROFILE_CANDIDATES`: BOOM V5 profile sweep as
   `mode,V5_ROUNDS,V5_TRAIN_PASSES,V5_RAS_DEPTH,V5_IN_PLACE_DELAY` tuples.
   The legacy 4-field form is still accepted and maps to `recursive`.
