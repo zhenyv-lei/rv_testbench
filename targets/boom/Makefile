@@ -29,6 +29,7 @@ V5_TRAIN_PASSES ?=
 V5_RAS_DEPTH ?=
 V5_IN_PLACE_DELAY ?=
 V5_GADGET_MODE ?=
+MELTDOWN_ATTEMPTS ?=
 
 OVERRIDES :=
 ifneq ($(strip $(SECRET_SZ)),)
@@ -76,29 +77,34 @@ OVERRIDES += -DV5_GADGET_MODE=0
 else ifneq ($(strip $(V5_GADGET_MODE)),)
 OVERRIDES += -DV5_GADGET_MODE=$(V5_GADGET_MODE)
 endif
+ifneq ($(strip $(MELTDOWN_ATTEMPTS)),)
+OVERRIDES += -DMELTDOWN_ATTEMPTS=$(MELTDOWN_ATTEMPTS)
+endif
 
 CFLAGS := -mcmodel=medany -l -std=gnu99 -O0 -g -fno-common -fno-builtin-printf \
           -Wall -I$(INC) -Wno-unused-function -Wno-unused-variable $(OVERRIDES)
 LDFLAGS := -static -nostdlib -nostartfiles -lgcc
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEP)/$(basename $(notdir $@)).d
 
-PROGRAMS := spectre-v1 spectre-v2 spectre-v4 spectre-v5
+PROGRAMS := spectre-v1 spectre-v2 spectre-v4 spectre-v5 meltdown
 SPECTRE_V1_SRC := $(WORKLOADS)/spectre-v1/src/spectre-v1.c
 SPECTRE_V2_SRC := $(WORKLOADS)/spectre-v2/src/spectre-v2.c
 SPECTRE_V4_SRC := $(WORKLOADS)/spectre-v4/src/spectre-v4.c
 SPECTRE_V5_SRC := $(WORKLOADS)/spectre-v5/src/spectre-v5.c
+MELTDOWN_SRC := $(WORKLOADS)/meltdown/src/meltdown.c
 SPECTRE_V4_GADGET := $(WORKLOADS)/spectre-v4/src/spectre-v4-gadget.S
 SPECTRE_V5_GADGET := $(WORKLOADS)/spectre-v5/src/spectre-v5-gadget.S
 BINS := $(addprefix $(BIN)/,$(addsuffix .riscv,$(PROGRAMS)))
 DUMPS := $(addprefix $(DMP)/,$(addsuffix .dump,$(PROGRAMS)))
 
-.PHONY: all clean dumps v1 v2 v4 v5
+.PHONY: all clean dumps v1 v2 v4 v5 meltdown
 all: $(BINS) $(DUMPS)
 
 v1: $(BIN)/spectre-v1.riscv $(DMP)/spectre-v1.dump
 v2: $(BIN)/spectre-v2.riscv $(DMP)/spectre-v2.dump
 v4: $(BIN)/spectre-v4.riscv $(DMP)/spectre-v4.dump
 v5: $(BIN)/spectre-v5.riscv $(DMP)/spectre-v5.dump
+meltdown: $(BIN)/meltdown.riscv $(DMP)/meltdown.dump
 
 dumps: $(DUMPS)
 
@@ -123,6 +129,10 @@ $(OBJ)/spectre-v4.o: $(SPECTRE_V4_SRC)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(OBJ)/spectre-v5.o: $(SPECTRE_V5_SRC)
+	@mkdir -p $(OBJ) $(DEP)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
+
+$(OBJ)/meltdown.o: $(MELTDOWN_SRC)
 	@mkdir -p $(OBJ) $(DEP)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 

@@ -21,6 +21,7 @@ V5_TRAIN_PASSES="${V5_TRAIN_PASSES:-}"
 V5_RAS_DEPTH="${V5_RAS_DEPTH:-}"
 V5_IN_PLACE_DELAY="${V5_IN_PLACE_DELAY:-}"
 V5_GADGET_MODE="${V5_GADGET_MODE:-}"
+MELTDOWN_ATTEMPTS="${MELTDOWN_ATTEMPTS:-}"
 
 MAX_CYCLES="${MAX_CYCLES:-3000000000}"
 TIMEOUT="${TIMEOUT:-30m}"
@@ -31,7 +32,7 @@ RUN_TAG="${RUN_TAG:-}"
 
 usage() {
     cat <<USAGE
-Usage: $0 [v1|v2|v4|v5|all]
+Usage: $0 [v1|v2|v4|v5|meltdown|all]
 
 Environment overrides:
   CONFIG=SmallBoomV4Config
@@ -49,6 +50,7 @@ Environment overrides:
   V5_RAS_DEPTH=1
   V5_IN_PLACE_DELAY=0
   V5_GADGET_MODE=loop
+  MELTDOWN_ATTEMPTS=64
   MAX_CYCLES=3000000000
   TIMEOUT=30m
   USE_DRAMSIM=0
@@ -57,7 +59,7 @@ USAGE
 }
 
 case "$ATTACK" in
-    v1|v2|v4|v5|all) ;;
+    v1|v2|v4|v5|meltdown|all) ;;
     -h|--help|help)
         usage
         exit 0
@@ -109,6 +111,9 @@ fi
 if [[ -n "$V5_GADGET_MODE" ]]; then
     make_args+=("V5_GADGET_MODE=$V5_GADGET_MODE")
 fi
+if [[ -n "$MELTDOWN_ATTEMPTS" ]]; then
+    make_args+=("MELTDOWN_ATTEMPTS=$MELTDOWN_ATTEMPTS")
+fi
 
 targets=()
 case "$ATTACK" in
@@ -116,7 +121,8 @@ case "$ATTACK" in
     v2) targets=(v2) ;;
     v4) targets=(v4) ;;
     v5) targets=(v5) ;;
-    all) targets=(v1 v2 v4 v5) ;;
+    meltdown) targets=(meltdown) ;;
+    all) targets=(v1 v2 v4 v5 meltdown) ;;
 esac
 
 echo "[build] ROOT=$ROOT"
@@ -163,7 +169,7 @@ run_one() {
 
     echo "[status] $name exit_code=$rc"
     echo "[summary] $name"
-    strings -a "$log" | grep -E 'm\[|want|guess|^\[v[45]\]|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
+    strings -a "$log" | grep -E 'm\[|want|guess|^\[v[45]\]|^\[meltdown\]|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
 
     return "$rc"
 }
@@ -182,6 +188,9 @@ for target in "${targets[@]}"; do
             ;;
         v5)
             run_one "spectre-v5" "$ROOT/build/bin/spectre-v5.riscv" || overall=$?
+            ;;
+        meltdown)
+            run_one "meltdown" "$ROOT/build/bin/meltdown.riscv" || overall=$?
             ;;
     esac
 done
