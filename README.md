@@ -19,6 +19,7 @@ XiangShan. Attack code is organized by target processor.
 scripts/toolchain.sh
 scripts/run.sh
 scripts/run-spectre-v1-v2-calibrated.sh
+scripts/run-boom-v4-v5-asm.sh
 ```
 
 Full calibration-and-attack workflow:
@@ -46,6 +47,12 @@ scripts/toolchain.sh
 
 BOOM defaults to `BOOM_CONFIGS="MediumBoomV3Config MediumBoomV4Config"`.
 BOOM supports `VARIANTS="v1 v2 v4 v5"` in `scripts/toolchain.sh`.
+For direct smoke runs, `scripts/run.sh` also supports BOOM V4/V5:
+
+```bash
+TARGETS=boom VARIANTS="v4 v5" scripts/run.sh
+```
+
 XiangShan uses the local `targets/xiangshan/env.sh` simulator setting.
 
 Useful environment controls:

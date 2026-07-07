@@ -80,6 +80,13 @@ LoopPredictor gadget or `recursive` for the recursive-ret comparison gadget.
 Current `SmallBoomV4Config` 1-byte smoke status:
 
 ```bash
+cd /nfs/home/leizhenyu/opt/testbench
+TARGETS=boom VARIANTS="v4 v5" scripts/run.sh
+```
+
+Equivalent direct BOOM commands:
+
+```bash
 CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_ROUNDS=1 \
   RUN_TAG=verify-v4-asm scripts/run-workloads.sh v4
 

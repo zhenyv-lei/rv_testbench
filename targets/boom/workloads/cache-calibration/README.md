@@ -2,6 +2,15 @@
 
 This directory contains RV64 bare-metal ports of Spectre v1, v2, v4, and v5.
 
+This is a legacy execution-regression and cache-calibration area. The active
+BOOM Spectre V4/V5 assembly-gadget workloads live in:
+
+- `../spectre-v4/src/spectre-v4.c` plus `../spectre-v4/src/spectre-v4-gadget.S`
+- `../spectre-v5/src/spectre-v5.c` plus `../spectre-v5/src/spectre-v5-gadget.S`
+
+Use `scripts/run-boom-v4-v5-asm.sh` or `TARGETS=boom VARIANTS="v4 v5"
+scripts/run.sh` from the repository root for the current V4/V5 `.S` testbench.
+
 The build flow is:
 
 1. `.c` source is compiled to a RISC-V ELF named `*.riscv`.
