@@ -1,14 +1,16 @@
 # BOOM Spectre Testbench
 
-This directory contains BOOM-specific Spectre V1/V2 experiment code.
+This directory contains BOOM-specific Spectre V1/V2/V4/V5 experiment code.
 
 ## Layout
 
 - `env.sh`: BOOM simulator, toolchain, source, and log environment.
 - `workloads/spectre-v1/src/spectre-v1.c`: Spectre V1 / bounds-check bypass PoC.
 - `workloads/spectre-v2/src/spectre-v2.c`: Spectre V2 / branch-target injection PoC.
-- `workloads/spectre-v4/src/spectre-v4.c`: experimental speculative store bypass PoC.
-- `workloads/spectre-v5/src/spectre-v5.c`: experimental return-predictor PoC.
+- `workloads/spectre-v4/src/spectre-v4.c`: speculative store bypass PoC.
+- `workloads/spectre-v4/src/spectre-v4-gadget.S`: V4 store-to-load assembly gadget.
+- `workloads/spectre-v5/src/spectre-v5.c`: loop/return-predictor PoC.
+- `workloads/spectre-v5/src/spectre-v5-gadget.S`: V5 assembly gadgets.
 - `workloads/cache-calibration`: cache hit/miss calibration workload.
 - `runtime`: minimal bare-metal runtime used by BOOM attack workloads.
 - `include` and `link`: shared BOOM helper headers and linker script.
@@ -66,10 +68,26 @@ TARGETS=boom VARIANTS="v4 v5" \
 BOOM_CONFIGS="MediumBoomV3Config MediumBoomV4Config" \
 SECRET_SZ=1 ATTACK_REPEATS=3 \
 V4_ROUND_CANDIDATES="1 2 4 8 16 32 64 128" \
-V5_PROFILE_CANDIDATES="1,1,1,0 4,1,1,0 8,2,2,16 16,4,4,32" \
+V5_PROFILE_CANDIDATES="loop,1,1,16,8 recursive,1,1,1,4 recursive,8,2,2,16" \
 scripts/toolchain.sh
 ```
 
-Current V4/V5 status is execution-ready but not attack-calibrated. Minimal
-`SmallBoomV4Config` smoke runs complete, but V4 recovers the overwrite byte and
-V5 does not recover the first secret byte with the reduced profile.
+`V5_PROFILE_CANDIDATES` accepts either the legacy
+`rounds,train,ras_depth,delay` form or the preferred
+`mode,rounds,train,ras_depth,delay` form. `mode` is `loop` for the vusec-style
+LoopPredictor gadget or `recursive` for the recursive-ret comparison gadget.
+
+Current `SmallBoomV4Config` 1-byte smoke status:
+
+```bash
+CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_ROUNDS=1 \
+  RUN_TAG=verify-v4-asm scripts/run-workloads.sh v4
+
+CONFIG=SmallBoomV4Config SECRET_SZ=1 \
+  V5_GADGET_MODE=loop V5_ROUNDS=1 V5_TRAIN_PASSES=1 \
+  V5_RAS_DEPTH=16 V5_IN_PLACE_DELAY=8 \
+  RUN_TAG=verify-v5-loop scripts/run-workloads.sh v5
+```
+
+Both commands recover `S` as byte 0. The V5 recursive-ret mode executes but did
+not recover byte 0 in the minimal smoke profile.

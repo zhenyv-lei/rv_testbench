@@ -25,7 +25,7 @@ CAL_MAX_CYCLES="${CAL_MAX_CYCLES:-50000000}"
 SECRET_SZ="${SECRET_SZ:-1}"
 ROUND_CANDIDATES="${ROUND_CANDIDATES:-1 2 3 5 8 10}"
 V4_ROUND_CANDIDATES="${V4_ROUND_CANDIDATES:-1 2 4 8 16 32 64 128}"
-V5_PROFILE_CANDIDATES="${V5_PROFILE_CANDIDATES:-1,1,1,0 4,1,1,0 8,2,2,16 16,4,4,32}"
+V5_PROFILE_CANDIDATES="${V5_PROFILE_CANDIDATES:-loop,1,1,16,8 recursive,1,1,1,4 recursive,4,1,1,0 recursive,8,2,2,16 recursive,16,4,4,32}"
 ATTACK_REPEATS="${ATTACK_REPEATS:-3}"
 MIN_SUCCESS_PCT="${MIN_SUCCESS_PCT:-100}"
 STOP_ON_ACCEPT="${STOP_ON_ACCEPT:-1}"
@@ -157,6 +157,7 @@ for config in $BOOM_CONFIGS; do
         v5_train_passes=""
         v5_ras_depth=""
         v5_in_place_delay=""
+        v5_gadget_mode=""
         case "$variant" in
           v1|v2)
             attack_same_rounds="$candidate"
@@ -167,7 +168,20 @@ for config in $BOOM_CONFIGS; do
             ;;
           v5)
             attack_same_rounds="${ATTACK_SAME_ROUNDS:-2}"
-            IFS=, read -r v5_rounds v5_train_passes v5_ras_depth v5_in_place_delay <<< "$candidate"
+            IFS=, read -r v5_a v5_b v5_c v5_d v5_e <<< "$candidate"
+            if [[ -n "${v5_e:-}" ]]; then
+              v5_gadget_mode="$v5_a"
+              v5_rounds="$v5_b"
+              v5_train_passes="$v5_c"
+              v5_ras_depth="$v5_d"
+              v5_in_place_delay="$v5_e"
+            else
+              v5_gadget_mode="recursive"
+              v5_rounds="$v5_a"
+              v5_train_passes="$v5_b"
+              v5_ras_depth="$v5_c"
+              v5_in_place_delay="$v5_d"
+            fi
             ;;
         esac
         set +e
@@ -184,6 +198,7 @@ for config in $BOOM_CONFIGS; do
           V5_TRAIN_PASSES="$v5_train_passes" \
           V5_RAS_DEPTH="$v5_ras_depth" \
           V5_IN_PLACE_DELAY="$v5_in_place_delay" \
+          V5_GADGET_MODE="$v5_gadget_mode" \
           TIMEOUT="$TIMEOUT" \
           MAX_CYCLES="$MAX_CYCLES" \
           LOG_DIR="$BOOM_LOG_DIR" \

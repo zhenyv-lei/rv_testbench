@@ -13,24 +13,8 @@ static uint8_t *channel;
 static const char secret[] = "S3CreT";
 static const char overwrite = '#';
 
-static __attribute__((noinline)) void access_array(size_t x)
-{
-  char *data_ptr = data;
-  char **data_slowptr = &data_ptr;
-  char ***data_slowslowptr = &data_slowptr;
-  size_t index = x;
-
-  strcpy(data_ptr, secret);
-  fence_all();
-  flush_line(&index);
-  flush_line(&data_ptr);
-  flush_line(&data_slowptr);
-  flush_line(&data_slowslowptr);
-  fence_all();
-
-  (*(*data_slowslowptr))[index] = overwrite;
-  probe_encode(channel, (uint8_t)data_ptr[index]);
-}
+extern void boom_v4_store_bypass_probe(uint8_t *data_ptr, uint8_t *probe,
+                                       uint8_t secret_value, uint8_t overwrite_value);
 
 static __attribute__((noinline)) void read_byte(size_t index, uint8_t result[2],
                                                 uint64_t score[2], uint64_t threshold)
@@ -40,8 +24,12 @@ static __attribute__((noinline)) void read_byte(size_t index, uint8_t result[2],
 
   for (int round = V4_ROUNDS; round > 0; --round)
   {
+    data[index] = (char)secret[index];
     flush_range(channel, PROBE_BYTES);
-    access_array(index);
+    flush_line(&data[index]);
+    fence_all();
+    boom_v4_store_bypass_probe((uint8_t *)&data[index], channel,
+                               (uint8_t)secret[index], (uint8_t)overwrite);
 
     for (size_t i = 0; i < PROBE_ENTRIES; ++i)
     {

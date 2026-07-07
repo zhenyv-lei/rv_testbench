@@ -19,6 +19,7 @@ V5_ROUNDS="${V5_ROUNDS:-}"
 V5_TRAIN_PASSES="${V5_TRAIN_PASSES:-}"
 V5_RAS_DEPTH="${V5_RAS_DEPTH:-}"
 V5_IN_PLACE_DELAY="${V5_IN_PLACE_DELAY:-}"
+V5_GADGET_MODE="${V5_GADGET_MODE:-}"
 
 MAX_CYCLES="${MAX_CYCLES:-3000000000}"
 TIMEOUT="${TIMEOUT:-30m}"
@@ -45,6 +46,7 @@ Environment overrides:
   V5_TRAIN_PASSES=1
   V5_RAS_DEPTH=1
   V5_IN_PLACE_DELAY=0
+  V5_GADGET_MODE=loop
   MAX_CYCLES=3000000000
   TIMEOUT=30m
   USE_DRAMSIM=0
@@ -98,6 +100,9 @@ if [[ -n "$V5_RAS_DEPTH" ]]; then
 fi
 if [[ -n "$V5_IN_PLACE_DELAY" ]]; then
     make_args+=("V5_IN_PLACE_DELAY=$V5_IN_PLACE_DELAY")
+fi
+if [[ -n "$V5_GADGET_MODE" ]]; then
+    make_args+=("V5_GADGET_MODE=$V5_GADGET_MODE")
 fi
 
 targets=()

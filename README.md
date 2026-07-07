@@ -58,7 +58,25 @@ Useful environment controls:
 - `TOOLCHAIN_TAG`: optional log/summary tag for reproducible filenames.
 - `V4_ROUND_CANDIDATES`: BOOM V4 round sweep, default `1 2 4 8 16 32 64 128`.
 - `V5_PROFILE_CANDIDATES`: BOOM V5 profile sweep as
-  `V5_ROUNDS,V5_TRAIN_PASSES,V5_RAS_DEPTH,V5_IN_PLACE_DELAY` tuples.
+  `mode,V5_ROUNDS,V5_TRAIN_PASSES,V5_RAS_DEPTH,V5_IN_PLACE_DELAY` tuples.
+  The legacy 4-field form is still accepted and maps to `recursive`.
+
+BOOM V4/V5 use C harnesses with assembly gadgets. The current verified
+`SmallBoomV4Config` smoke settings are:
+
+```bash
+cd targets/boom
+CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_ROUNDS=1 \
+  RUN_TAG=verify-v4-asm scripts/run-workloads.sh v4
+
+CONFIG=SmallBoomV4Config SECRET_SZ=1 \
+  V5_GADGET_MODE=loop V5_ROUNDS=1 V5_TRAIN_PASSES=1 \
+  V5_RAS_DEPTH=16 V5_IN_PLACE_DELAY=8 \
+  RUN_TAG=verify-v5-loop scripts/run-workloads.sh v5
+```
+
+The V5 `recursive` gadget is retained for comparison, but the verified leak
+uses the vusec-style loop-predictor gadget.
 
 The summary TSV columns are:
 
