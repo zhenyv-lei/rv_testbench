@@ -14,6 +14,11 @@ ATTACK_SAME_ROUNDS="${ATTACK_SAME_ROUNDS:-2}"
 TRAIN_TIMES="${TRAIN_TIMES:-}"
 ROUNDS="${ROUNDS:-}"
 CACHE_HIT_THRESHOLD="${CACHE_HIT_THRESHOLD:-}"
+V4_ROUNDS="${V4_ROUNDS:-}"
+V5_ROUNDS="${V5_ROUNDS:-}"
+V5_TRAIN_PASSES="${V5_TRAIN_PASSES:-}"
+V5_RAS_DEPTH="${V5_RAS_DEPTH:-}"
+V5_IN_PLACE_DELAY="${V5_IN_PLACE_DELAY:-}"
 
 MAX_CYCLES="${MAX_CYCLES:-3000000000}"
 TIMEOUT="${TIMEOUT:-30m}"
@@ -24,7 +29,7 @@ RUN_TAG="${RUN_TAG:-}"
 
 usage() {
     cat <<USAGE
-Usage: $0 [v1|v2|all]
+Usage: $0 [v1|v2|v4|v5|all]
 
 Environment overrides:
   CONFIG=SmallBoomV4Config
@@ -35,6 +40,11 @@ Environment overrides:
   TRAIN_TIMES=6
   ROUNDS=1
   CACHE_HIT_THRESHOLD=50
+  V4_ROUNDS=1
+  V5_ROUNDS=1
+  V5_TRAIN_PASSES=1
+  V5_RAS_DEPTH=1
+  V5_IN_PLACE_DELAY=0
   MAX_CYCLES=3000000000
   TIMEOUT=30m
   USE_DRAMSIM=0
@@ -43,7 +53,7 @@ USAGE
 }
 
 case "$ATTACK" in
-    v1|v2|all) ;;
+    v1|v2|v4|v5|all) ;;
     -h|--help|help)
         usage
         exit 0
@@ -74,12 +84,29 @@ fi
 if [[ -n "$CACHE_HIT_THRESHOLD" ]]; then
     make_args+=("CACHE_HIT_THRESHOLD=$CACHE_HIT_THRESHOLD")
 fi
+if [[ -n "$V4_ROUNDS" ]]; then
+    make_args+=("V4_ROUNDS=$V4_ROUNDS")
+fi
+if [[ -n "$V5_ROUNDS" ]]; then
+    make_args+=("V5_ROUNDS=$V5_ROUNDS")
+fi
+if [[ -n "$V5_TRAIN_PASSES" ]]; then
+    make_args+=("V5_TRAIN_PASSES=$V5_TRAIN_PASSES")
+fi
+if [[ -n "$V5_RAS_DEPTH" ]]; then
+    make_args+=("V5_RAS_DEPTH=$V5_RAS_DEPTH")
+fi
+if [[ -n "$V5_IN_PLACE_DELAY" ]]; then
+    make_args+=("V5_IN_PLACE_DELAY=$V5_IN_PLACE_DELAY")
+fi
 
 targets=()
 case "$ATTACK" in
     v1) targets=(v1) ;;
     v2) targets=(v2) ;;
-    all) targets=(v1 v2) ;;
+    v4) targets=(v4) ;;
+    v5) targets=(v5) ;;
+    all) targets=(v1 v2 v4 v5) ;;
 esac
 
 echo "[build] ROOT=$ROOT"
@@ -126,7 +153,7 @@ run_one() {
 
     echo "[status] $name exit_code=$rc"
     echo "[summary] $name"
-    strings -a "$log" | grep -E 'm\[|want|guess|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
+    strings -a "$log" | grep -E 'm\[|want|guess|^\[v[45]\]|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
 
     return "$rc"
 }
@@ -139,6 +166,12 @@ for target in "${targets[@]}"; do
             ;;
         v2)
             run_one "spectre-v2" "$ROOT/build/bin/spectre-v2.riscv" || overall=$?
+            ;;
+        v4)
+            run_one "spectre-v4" "$ROOT/build/bin/spectre-v4.riscv" || overall=$?
+            ;;
+        v5)
+            run_one "spectre-v5" "$ROOT/build/bin/spectre-v5.riscv" || overall=$?
             ;;
     esac
 done

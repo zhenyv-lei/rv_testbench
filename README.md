@@ -45,6 +45,7 @@ scripts/toolchain.sh
    pass count and success-rate percentage.
 
 BOOM defaults to `BOOM_CONFIGS="MediumBoomV3Config MediumBoomV4Config"`.
+BOOM supports `VARIANTS="v1 v2 v4 v5"` in `scripts/toolchain.sh`.
 XiangShan uses the local `targets/xiangshan/env.sh` simulator setting.
 
 Useful environment controls:
@@ -55,6 +56,9 @@ Useful environment controls:
   default `1`.
 - `SUMMARY_TSV`: optional explicit summary output path.
 - `TOOLCHAIN_TAG`: optional log/summary tag for reproducible filenames.
+- `V4_ROUND_CANDIDATES`: BOOM V4 round sweep, default `1 2 4 8 16 32 64 128`.
+- `V5_PROFILE_CANDIDATES`: BOOM V5 profile sweep as
+  `V5_ROUNDS,V5_TRAIN_PASSES,V5_RAS_DEPTH,V5_IN_PLACE_DELAY` tuples.
 
 The summary TSV columns are:
 
@@ -103,3 +107,9 @@ reduce runtime.
 
 These verified logs are from the previous 1-byte smoke configuration. Re-run
 the scripts to generate logs for the reduced-round `S3CreT` configuration.
+
+BOOM V4/V5 are experimental. The current minimal smoke profiles compile and
+execute on `SmallBoomV4Config`, but do not yet recover `S`:
+
+- V4 minimal profile recovers the overwrite byte `#`.
+- V5 minimal profile currently reports no cache hit for byte 0.
