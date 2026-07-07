@@ -63,7 +63,8 @@ Useful environment controls:
   default `1`.
 - `SUMMARY_TSV`: optional explicit summary output path.
 - `TOOLCHAIN_TAG`: optional log/summary tag for reproducible filenames.
-- `V4_ROUND_CANDIDATES`: BOOM V4 round sweep, default `1 2 4 8 16 32 64 128`.
+- `V4_ROUND_CANDIDATES`: BOOM V4 profile sweep. Use `mode,rounds`
+  entries such as `asm,1 inline,1`; legacy numeric entries map to `asm`.
 - `V5_PROFILE_CANDIDATES`: BOOM V5 profile sweep as
   `mode,V5_ROUNDS,V5_TRAIN_PASSES,V5_RAS_DEPTH,V5_IN_PLACE_DELAY` tuples.
   The legacy 4-field form is still accepted and maps to `recursive`.
@@ -75,6 +76,9 @@ BOOM V4/V5 use C harnesses with assembly gadgets. The current verified
 cd targets/boom
 CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_ROUNDS=1 \
   RUN_TAG=verify-v4-asm scripts/run-workloads.sh v4
+
+CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_GADGET_MODE=inline V4_ROUNDS=2 \
+  RUN_TAG=verify-v4-inline scripts/run-workloads.sh v4
 
 CONFIG=SmallBoomV4Config SECRET_SZ=1 \
   V5_GADGET_MODE=loop V5_ROUNDS=1 V5_TRAIN_PASSES=1 \

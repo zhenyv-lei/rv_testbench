@@ -7,7 +7,8 @@ This directory contains BOOM-specific Spectre V1/V2/V4/V5 experiment code.
 - `env.sh`: BOOM simulator, toolchain, source, and log environment.
 - `workloads/spectre-v1/src/spectre-v1.c`: Spectre V1 / bounds-check bypass PoC.
 - `workloads/spectre-v2/src/spectre-v2.c`: Spectre V2 / branch-target injection PoC.
-- `workloads/spectre-v4/src/spectre-v4.c`: speculative store bypass PoC.
+- `workloads/spectre-v4/src/spectre-v4.c`: speculative store bypass PoC with
+  `asm` and `inline` gadget modes.
 - `workloads/spectre-v4/src/spectre-v4-gadget.S`: V4 store-to-load assembly gadget.
 - `workloads/spectre-v5/src/spectre-v5.c`: loop/return-predictor PoC.
 - `workloads/spectre-v5/src/spectre-v5-gadget.S`: V5 assembly gadgets.
@@ -67,10 +68,14 @@ cd /nfs/home/leizhenyu/opt/testbench
 TARGETS=boom VARIANTS="v4 v5" \
 BOOM_CONFIGS="MediumBoomV3Config MediumBoomV4Config" \
 SECRET_SZ=1 ATTACK_REPEATS=3 \
-V4_ROUND_CANDIDATES="1 2 4 8 16 32 64 128" \
+V4_ROUND_CANDIDATES="asm,1 inline,2 asm,2 inline,4 asm,4" \
 V5_PROFILE_CANDIDATES="loop,1,1,16,8 recursive,1,1,1,4 recursive,8,2,2,16" \
 scripts/toolchain.sh
 ```
+
+`V4_ROUND_CANDIDATES` accepts either the legacy `rounds` form or the preferred
+`mode,rounds` form. `mode` is `asm` for `spectre-v4-gadget.S` or `inline` for
+the inline-assembly gadget in `spectre-v4.c`.
 
 `V5_PROFILE_CANDIDATES` accepts either the legacy
 `rounds,train,ras_depth,delay` form or the preferred
@@ -89,6 +94,9 @@ Equivalent direct BOOM commands:
 ```bash
 CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_ROUNDS=1 \
   RUN_TAG=verify-v4-asm scripts/run-workloads.sh v4
+
+CONFIG=SmallBoomV4Config SECRET_SZ=1 V4_GADGET_MODE=inline V4_ROUNDS=2 \
+  RUN_TAG=verify-v4-inline scripts/run-workloads.sh v4
 
 CONFIG=SmallBoomV4Config SECRET_SZ=1 \
   V5_GADGET_MODE=loop V5_ROUNDS=1 V5_TRAIN_PASSES=1 \

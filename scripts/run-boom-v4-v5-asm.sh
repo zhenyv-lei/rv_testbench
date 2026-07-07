@@ -24,6 +24,7 @@ for variant in $variants; do
     v4)
       CONFIG="$CONFIG" \
       SECRET_SZ="$SECRET_SZ" \
+      V4_GADGET_MODE="${V4_GADGET_MODE:-asm}" \
       V4_ROUNDS="${V4_ROUNDS:-1}" \
       TIMEOUT="$TIMEOUT" \
       MAX_CYCLES="$MAX_CYCLES" \

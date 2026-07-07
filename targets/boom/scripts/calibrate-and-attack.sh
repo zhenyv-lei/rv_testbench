@@ -24,7 +24,7 @@ MAX_CYCLES="${MAX_CYCLES:-3000000000}"
 CAL_MAX_CYCLES="${CAL_MAX_CYCLES:-50000000}"
 SECRET_SZ="${SECRET_SZ:-1}"
 ROUND_CANDIDATES="${ROUND_CANDIDATES:-1 2 3 5 8 10}"
-V4_ROUND_CANDIDATES="${V4_ROUND_CANDIDATES:-1 2 4 8 16 32 64 128}"
+V4_ROUND_CANDIDATES="${V4_ROUND_CANDIDATES:-asm,1 inline,2 asm,2 inline,4 asm,4 inline,8 asm,8 inline,16 asm,16 asm,32 asm,64 asm,128}"
 V5_PROFILE_CANDIDATES="${V5_PROFILE_CANDIDATES:-loop,1,1,16,8 recursive,1,1,1,4 recursive,4,1,1,0 recursive,8,2,2,16 recursive,16,4,4,32}"
 ATTACK_REPEATS="${ATTACK_REPEATS:-3}"
 MIN_SUCCESS_PCT="${MIN_SUCCESS_PCT:-100}"
@@ -153,6 +153,7 @@ for config in $BOOM_CONFIGS; do
         tag_value="${candidate//,/-}"
         run_tag="${TOOLCHAIN_TAG}-${name}-${param_name}${tag_value}-rep${rep}"
         v4_rounds=""
+        v4_gadget_mode=""
         v5_rounds=""
         v5_train_passes=""
         v5_ras_depth=""
@@ -164,7 +165,12 @@ for config in $BOOM_CONFIGS; do
             ;;
           v4)
             attack_same_rounds="${ATTACK_SAME_ROUNDS:-2}"
-            v4_rounds="$candidate"
+            if [[ "$candidate" == *,* ]]; then
+              IFS=, read -r v4_gadget_mode v4_rounds <<< "$candidate"
+            else
+              v4_gadget_mode="asm"
+              v4_rounds="$candidate"
+            fi
             ;;
           v5)
             attack_same_rounds="${ATTACK_SAME_ROUNDS:-2}"
@@ -194,6 +200,7 @@ for config in $BOOM_CONFIGS; do
           ATTACK_SAME_ROUNDS="$attack_same_rounds" \
           CACHE_HIT_THRESHOLD="$threshold" \
           V4_ROUNDS="$v4_rounds" \
+          V4_GADGET_MODE="$v4_gadget_mode" \
           V5_ROUNDS="$v5_rounds" \
           V5_TRAIN_PASSES="$v5_train_passes" \
           V5_RAS_DEPTH="$v5_ras_depth" \
