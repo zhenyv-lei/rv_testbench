@@ -1,0 +1,5 @@
+artifacts/
+targets/*/build/
+targets/*/workloads/*/build/
+targets/*/logs/
+*.log
