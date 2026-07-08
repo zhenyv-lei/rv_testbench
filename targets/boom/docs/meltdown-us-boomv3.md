@@ -822,6 +822,49 @@ real 364.30
 M-mode skip diagnostic makes recovery possible, but it does not produce a
 secret-specific cache footprint.
 
+The same PMP/M-mode-skip recovery path was then combined with
+`MELTDOWN_US_GADGET_VARIANT=3`, the fixed `probe[0x53]` fault-window
+diagnostic. This tests whether PMP gives a wider window for a younger
+independent load than the page-permission no-sfence path.
+
+Spike smoke passes:
+
+```text
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=3
+meltdown-us: fault_mode=pmp-access
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 reaches raw timing but remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var3-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=210 miss=242 threshold=226
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=241 i0=296 i80=288 i1=321 i55=250 i51=266 i56=250 i50=250 i54=257 i52=257
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 377.36
+```
+
+`i53=241` is closer to threshold than the page-permission no-sfence variant 3
+run (`255 > 241`), but it is still above the `226` PMP threshold. PMP therefore
+does not currently provide a successful younger-load cache footprint either.
+
 ## Clear-U Without SFENCE Diagnostic
 
 `MELTDOWN_US_CLEAR_NO_SFENCE=1` tests whether keeping a stale user TLB entry
@@ -1377,3 +1420,9 @@ independent load after the faulting supervisor-only load does not leave a
 stable measurable cache footprint. The next direction should therefore change
 the fault source or permission-transition timing, not only the
 secret-dependent address chain.
+
+The PMP/M-mode-skip run above tests one such alternate fault source with the
+same fixed-touch diagnostic. It also remains negative (`i53=241 >
+threshold=226`), although it is closer to threshold than the page-permission
+variant. BOOM v3 therefore still has not shown a reliable cache footprint from
+a younger load after the fault in either tested fault source.
