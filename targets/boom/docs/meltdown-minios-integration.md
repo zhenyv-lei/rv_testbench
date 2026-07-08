@@ -1092,6 +1092,39 @@ under the tested BOOM v3 no-sfence page-permission sequence, even a younger
 load independent of the secret does not leave a stable cache footprint after
 the supervisor-only faulting load.
 
+`MELTDOWN_US_GADGET_VARIANT=4` was added to amplify that diagnostic. It still
+uses constant probe indices, but it issues several independent fixed probe
+loads after the faulting load: `0x53`, `0x51`, `0x55`, and `0x80`.
+
+Spike smoke passed for both legal no-fault and accessed-bit faulting builds.
+
+BOOM v3 legal no-fault control:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-var4-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=280 threshold=244
+meltdown-us: raw attempt=0 i53=239 i0=266 i80=248 i1=248 i55=232 i51=232 i56=248 i50=252 i54=248 i52=248
+real 370.43
+```
+
+This confirms the widened fixed-touch gadget is observable on BOOM v3 without
+a fault: `i53=239`, `i55=232`, and `i51=232` are below threshold.
+
+BOOM v3 accessed-bit faulting run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-c1-var4-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=271 i0=248 i80=248 i1=289 i55=248 i51=248 i56=259 i50=248 i54=248 i52=248
+real 384.69
+```
+
+The target bucket remains cold (`i53=271 > 241`). Some fixed buckets are near
+the low-latency range (`i80/i55/i51=248`), but none crosses the threshold. This
+keeps the BOOM v3 accessed-bit path negative and suggests the fault window is
+still too narrow or too aggressively squashed for a stable younger-load cache
+footprint.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
@@ -1106,8 +1139,9 @@ than only increasing delay or timing repetitions. Candidate directions:
 1. Test a different fault source or permission transition that changes when
    BOOM resolves the fault relative to younger loads. The variant 3 diagnostic
    suggests the current page-permission no-sfence and accessed-bit paths squash
-   younger loads too early; the PMP/M-mode-skip path is closer but still not a
-   hit.
+   younger loads too early; variant 4 only produces weak near-threshold fixed
+   buckets under A-bit faulting, and the PMP/M-mode-skip path is closer but
+   still not a hit.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,

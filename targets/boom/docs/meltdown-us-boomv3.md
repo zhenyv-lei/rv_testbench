@@ -1474,3 +1474,69 @@ sources with the same fixed-touch diagnostic. They also remain negative
 (`i53=241 > threshold=226` for PMP and `i53=255 > threshold=241` for A-bit).
 BOOM v3 therefore still has not shown a reliable cache footprint from a younger
 load after the fault in any tested fault source.
+
+## Gadget Variant 4
+
+`MELTDOWN_US_GADGET_VARIANT=4` extends the fixed-touch diagnostic by issuing
+several independent fixed probe loads after the faulting load:
+
+```asm
+lbu  t0, 0(secret_va)
+touch probe[0x53]
+touch probe[0x51]
+touch probe[0x55]
+touch probe[0x80]
+```
+
+This is still not a leakage gadget because all touched buckets are constants.
+Its purpose is to test whether a wider group of younger independent loads can
+leave any measurable cache footprint when the single fixed-touch diagnostic is
+too weak.
+
+Spike smoke passed for both legal no-fault and accessed-bit faulting builds.
+
+BOOM v3, legal no-fault control:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-var4-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=4
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=280 threshold=244
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=239 i0=266 i80=248 i1=248 i55=232 i51=232 i56=248 i50=252 i54=248 i52=248
+meltdown-us: done
+real 370.43
+```
+
+The legal path confirms variant 4 can create a measurable footprint:
+`i53=239`, `i55=232`, and `i51=232` are below the `244` threshold. Bucket
+`0x80=248` is close but above threshold.
+
+BOOM v3, accessed-bit faulting run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-c1-var4-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=4
+MELTDOWN_US_CLEAR_ACCESSED=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=271 i0=248 i80=248 i1=289 i55=248 i51=248 i56=259 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 384.69
+```
+
+The faulting run remains negative for the target bucket: `i53=271` is above
+the `241` threshold. Some fixed buckets sit near the low-latency range
+(`i80/i55/i51=248`), but none crosses the threshold and the target bucket is
+cold. Variant 4 therefore strengthens the earlier conclusion: the current A-bit
+fault source does not provide a stable BOOM v3 younger-load footprint, even
+when several independent fixed probe loads are issued after the fault.
