@@ -892,6 +892,56 @@ page fault, and recover. It still does not leak the secret: bucket `0x53`
 measures `273`, above the `241` threshold and equal to/near miss-level control
 buckets.
 
+### Repeated No-SFENCE Debug Attempts
+
+To check whether the single-attempt no-sfence result was hiding rare hits, the
+same debug-only configuration was rerun with multiple attempts. A four-attempt
+run reached three raw measurements but hit the 480-second wrapper timeout
+before `done`:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a4.log
+MELTDOWN_US_ATTEMPTS=4
+meltdown-us: timing hit=208 miss=250 threshold=229
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=336 i0=248 i80=285 i1=264 i55=248 i51=248 i56=248 i50=248 i54=252 i52=248
+meltdown-us: raw attempt=1 i53=290 i0=255 i80=286 i1=259 i55=248 i51=307 i56=248 i50=248 i54=248 i52=248
+meltdown-us: raw attempt=2 i53=271 i0=248 i80=248 i1=289 i55=248 i51=248 i56=259 i50=248 i54=248 i52=248
+real 480.01
+```
+
+A three-attempt run also timed out after two raw measurements:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a3.log
+MELTDOWN_US_ATTEMPTS=3
+meltdown-us: timing hit=208 miss=239 threshold=223
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=298 i0=286 i80=285 i1=248 i55=281 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: raw attempt=1 i53=291 i0=260 i80=248 i1=259 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+real 480.01
+```
+
+The clean repeated run uses two attempts and exits normally:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a2clean.log
+MELTDOWN_US_ATTEMPTS=2
+meltdown-us: timing hit=208 miss=250 threshold=229
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=271 i0=261 i80=296 i1=265 i55=248 i51=252 i56=259 i50=248 i54=248 i52=248
+meltdown-us: raw attempt=1 i53=264 i0=248 i80=285 i1=301 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 432.99
+```
+
+The clean no-sfence repeated success rate is `0/2`: neither attempt had
+`i53 < threshold`. The timeout runs add five more partial negative samples
+(`i53` values 336, 290, 271, 298, and 291), but they are not counted as clean
+success-rate runs because they did not reach `done`.
+
 ## Clear Accessed-Bit Diagnostic
 
 `MELTDOWN_US_CLEAR_ACCESSED=1` tests a different page-fault source. The secret

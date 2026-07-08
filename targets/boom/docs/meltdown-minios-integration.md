@@ -761,6 +761,24 @@ real 370.68
 The no-sfence path is therefore another negative BOOM v3 leakage result:
 `i53=273` is above the `241` threshold.
 
+Repeated no-sfence debug-only runs were used to check for rare successful
+attempts. The clean two-attempt run completed and remained negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a2clean.log
+meltdown-us: timing hit=208 miss=250 threshold=229
+meltdown-us: raw attempt=0 i53=271 i0=261 i80=296 i1=265 i55=248 i51=252 i56=259 i50=248 i54=248 i52=248
+meltdown-us: raw attempt=1 i53=264 i0=248 i80=285 i1=301 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 432.99
+```
+
+The measured no-sfence success rate for the clean repeated run is `0/2`.
+Three- and four-attempt runs timed out at 480 seconds after producing only
+partial raw measurements; those partial samples were also negative but are not
+counted in the clean success-rate denominator.
+
 ## Clear Accessed-Bit Diagnostic
 
 `MELTDOWN_US_CLEAR_ACCESSED=1` keeps the secret page user-readable, then clears
