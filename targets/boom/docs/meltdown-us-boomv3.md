@@ -103,10 +103,645 @@ already provides the missing U/S trapframe structure. A first incremental patch
 is recorded in `targets/boom/patches/minios-meltdown-us-smoke.patch`, with
 notes in `targets/boom/docs/meltdown-minios-integration.md`.
 
-That patch has passed a Spike smoke test for:
+That patch has now passed Spike and BOOM v3 smoke tests for:
 
 - mapping a secret page into the user page table with `PTE_U=0`;
 - triggering a U-mode load page fault on that address;
 - recovering through the miniOS trap path back to user code.
 
+BOOM v3 command:
+
+```bash
+/usr/bin/time -p timeout 10m \
+  /nfs/home/leizhenyu/opt/DUTs/boom/chipyard/sims/verilator/simulator-chipyard.harness-MediumBoomV3Config \
+  +permissive +max-cycles=3000000000 \
+  +loadmem=/tmp/minios-meltdown-work2-build-halt/minios.spike.elf \
+  +permissive-off /tmp/minios-meltdown-work2-build-halt/minios.spike.elf \
+  2>&1 | tee targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-smoke-tiny-halt.log
+```
+
+BOOM v3 output:
+
+```text
+meltdown-us: secret_va=0x20000000 attempts=8
+meltdown-us: fault recovery ok
+meltdown-us: done
+Verilog $finish
+real 213.79
+```
+
 It does not yet claim BOOM cache-timing leakage.
+
+## Kernel-Timing Follow-up
+
+The miniOS patch now includes an optional `MELTDOWN_US_TIMING=1` path. Because
+U-mode `rdcycle` and S-mode `cycle` CSR access were unstable or trapped, the
+current timing path measures in S-mode through `SYS_meltdown_probe` using the
+CLINT `mtime` MMIO counter.
+
+BOOM v3 command:
+
+```bash
+/usr/bin/time -p timeout 10m \
+  /nfs/home/leizhenyu/opt/DUTs/boom/chipyard/sims/verilator/simulator-chipyard.harness-MediumBoomV3Config \
+  +permissive +max-cycles=3000000000 \
+  +loadmem=/tmp/minios-meltdown-work2-build-ktiming-r4096/minios.spike.elf \
+  +permissive-off /tmp/minios-meltdown-work2-build-ktiming-r4096/minios.spike.elf \
+  2>&1 | tee targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-ktiming-r4096.log
+```
+
+Parameters:
+
+```text
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_ATTEMPTS=1
+MELTDOWN_US_TIME_REPS=4096
+```
+
+Observed output:
+
+```text
+meltdown-us: timing hit=9 miss=8 threshold=8
+meltdown-us: fault recovery ok
+meltdown-us: score best=0x9/1 second=0xa/1 secret=0x53
+meltdown-us: leak candidate miss
+real 569.17
+```
+
+This reaches the measurement phase on BOOM v3, but it does not recover the
+secret byte. The current best candidate is noise, not `0x53`.
+
+The follow-up `kflush-r4096` run adds a dedicated
+`SYS_meltdown_flush_probe` syscall before each faulting attempt:
+
+```bash
+/usr/bin/time -p timeout 10m \
+  /nfs/home/leizhenyu/opt/DUTs/boom/chipyard/sims/verilator/simulator-chipyard.harness-MediumBoomV3Config \
+  +permissive +max-cycles=3000000000 \
+  +loadmem=/tmp/minios-meltdown-work2-build-kflush-r4096/minios.spike.elf \
+  +permissive-off /tmp/minios-meltdown-work2-build-kflush-r4096/minios.spike.elf \
+  2>&1 | tee targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-kflush-r4096.log
+```
+
+Observed output:
+
+```text
+meltdown-us: timing hit=9 miss=9 threshold=9
+meltdown-us: fault recovery ok
+meltdown-us: score best=0x0/1 second=0x1/1 secret=0x53
+meltdown-us: leak candidate miss
+meltdown-us: done
+real 594.03
+```
+
+Interpretation: fault/recovery remains stable, but the explicit flush does not
+make the side channel distinguish `0x53`. The `mtime` timing source reports
+equal hit/miss calibration on this run, so the current demo is a working
+Meltdown-US privilege/fault harness, not a successful BOOM v3 leakage demo.
+
+## Raw Timing Diagnostic
+
+A guarded cycle-counter prototype was added as
+`MELTDOWN_US_CYCLE_TIMING=1`, but it is not currently usable. On Spike it
+reaches the scheduler and then times out before the user program prints
+`meltdown-us: main begin`:
+
+```text
+minios booting on core 0
+minios core 0 installed sv39 kpt 0x807f7000 satp 0x80000000000807f7
+SPIKE: FAIL (timeout waiting for meltdown-us: done)
+real 104.69
+```
+
+The cycle-counter failure was split into smaller cases:
+
+- `MELTDOWN_US_ENABLE_COUNTEREN=1` while still measuring with `mtime` also
+  timed out after kernel page-table installation:
+
+```text
+minios booting on core 0
+minios core 0 installed sv39 kpt 0x807f7000 satp 0x80000000000807f7
+SPIKE: FAIL (timeout waiting for meltdown-us: done)
+real 104.75
+```
+
+- `MELTDOWN_US_MCYCLE_TIMING=1` skips `mcounteren` and reads `mcycle` directly
+  inside the S-mode syscall. Spike rejects it as an illegal instruction:
+
+```text
+meltdown-us: main begin
+meltdown-us: secret_va=0x20000000 attempts=1
+[trap] unexpected kernel trap scause=0x2 sepc=0x80006512 stval=0xb0002873
+panic: [trap] unexpected kernel trap
+real 4.76
+```
+
+This rules out both simple cycle-counter variants for BOOM follow-up: one
+prevents user scheduling in the Spike baseline, and the other traps before any
+measurement can complete.
+
+The next diagnostic therefore keeps the stable `mtime` path and adds
+`SYS_meltdown_probe_time_one`, controlled by `MELTDOWN_US_DEBUG_TIMES=1`.
+With the full 256-bucket scan still enabled, BOOM v3 printed raw selected
+buckets but hit the 10-minute outer timeout before `meltdown-us: done`:
+
+```text
+meltdown-us: timing hit=9 miss=9 threshold=9
+meltdown-us: raw attempt=0 i0=9 i1=9 i52=9 i53=9 i54=9
+real 600.01
+```
+
+With `MELTDOWN_US_DEBUG_ONLY=1`, the program skips the full scan after printing
+the selected raw buckets and halts cleanly:
+
+```text
+meltdown-us: timing hit=9 miss=9 threshold=9
+meltdown-us: raw attempt=0 i0=10 i1=9 i52=9 i53=9 i54=9
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 316.49
+```
+
+This is a negative leakage result. Bucket `0x53` is not faster than the control
+buckets under the current `mtime` measurement path.
+
+## M-mode Cycle Timing Diagnostic
+
+The latest miniOS patch adds `MELTDOWN_US_MMODE_CYCLE_TIMING=1`: S-mode asks
+M-mode for `mcycle` through a magic ecall (`a7=0x4d435943`). This keeps the
+earlier Spike baseline healthy while giving BOOM v3 cycle-level timing.
+
+Spike sanity run:
+
+```text
+MELTDOWN_US_TIME_REPS=64
+meltdown-us: timing hit=292 miss=292 threshold=292
+meltdown-us: raw attempt=0 i0=292 i1=292 i52=292 i53=292 i54=292
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+SPIKE: PASS
+real 4.76
+```
+
+BOOM v3, original gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-debugonly-r64.log
+MELTDOWN_US_TIME_REPS=64
+meltdown-us: timing hit=352 miss=411 threshold=381
+meltdown-us: raw attempt=0 i0=377 i1=418 i52=383 i53=391 i54=389
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 311.62
+```
+
+The hit/miss calibration is finally visible on BOOM v3, but bucket `0x53` is
+not faster than the controls.
+
+The user gadget was then adjusted from signed `lb` plus `ld zero, 0(t0)` to
+unsigned `lbu` plus a dependent `lb` into `t1`. This avoids a possible special
+case around loads with `rd=x0`.
+
+BOOM v3, adjusted gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-gadget1-debugonly-r1.log
+MELTDOWN_US_TIME_REPS=1
+meltdown-us: timing hit=236 miss=223 threshold=229
+meltdown-us: raw attempt=0 i0=240 i1=282 i52=272 i53=240 i54=240
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 345.21
+
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-gadget1-debugonly-r8.log
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=254 miss=246 threshold=250
+meltdown-us: raw attempt=0 i0=257 i1=273 i52=265 i53=249 i54=249
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 336.30
+```
+
+Current conclusion: the miniOS Meltdown-US harness now works through
+supervisor-only mapping, U-mode fault, trap recovery, probe flush, and
+cycle-level timing on BOOM v3. It still has not recovered secret byte `0x53`.
+The remaining work is not OS setup; it is finding a BOOM v3 gadget/calibration
+combination where the faulting load forwards data far enough to touch the
+secret-indexed probe line before trap recovery squashes the path.
+
+## Calibration And Stride Follow-up
+
+`MELTDOWN_US_CAL_REPS=5` was added so calibration measures multiple hot/cold
+samples in S-mode and reports a conservative pair: minimum hot timing and
+maximum cold timing. This removed the hit/miss reversal seen in earlier
+single-sample runs.
+
+BOOM v3, adjusted gadget, `PROBE_STRIDE=64`, `CAL_REPS=5`:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadget1-debugonly-r8.log
+MELTDOWN_US_ATTEMPTS=1
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i0=286 i1=290 i52=271 i53=248 i54=248
+real 285.62
+```
+
+With four attempts, `i53` remained near hit latency, but `i54` did too:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadget1-debugonly-r8-a4.log
+meltdown-us: timing hit=208 miss=239 threshold=223
+meltdown-us: raw attempt=0 i0=286 i1=302 i52=275 i53=259 i54=248
+meltdown-us: raw attempt=1 i0=300 i1=290 i52=290 i53=248 i54=248
+meltdown-us: raw attempt=2 i0=287 i1=290 i52=280 i53=248 i54=248
+meltdown-us: raw attempt=3 i0=286 i1=314 i52=271 i53=248 i54=248
+real 416.33
+```
+
+A wider raw debug window confirmed this is not a clean `0x53` signal:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadget1-debugonly-r8-wide-a2.log
+meltdown-us: timing hit=208 miss=273 threshold=240
+meltdown-us: raw attempt=0 i0=308 i1=289 i50=264 i51=252 i52=248 i53=248 i54=248 i55=248 i56=248
+meltdown-us: raw attempt=1 i0=314 i1=255 i50=264 i51=248 i52=248 i53=255 i54=255 i55=255 i56=255
+real 337.57
+```
+
+The probe stride was then parameterized as `MELTDOWN_US_PROBE_STRIDE`.
+`PROBE_STRIDE=4096` passes Spike smoke but is too slow for the current BOOM
+debug path: the BOOM run reached `meltdown-us: main begin` but timed out at
+480 seconds before calibration finished.
+
+`PROBE_STRIDE=512` keeps runtime practical but still shows multi-bucket hits:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadget1-debugonly-r8-s512-a2.log
+meltdown-us: timing hit=209 miss=239 threshold=224
+meltdown-us: raw attempt=0 i0=286 i1=255 i50=255 i51=255 i52=248 i53=248 i54=248 i55=259 i56=248
+meltdown-us: raw attempt=1 i0=255 i1=255 i50=285 i51=259 i52=248 i53=248 i54=248 i55=259 i56=248
+real 382.37
+```
+
+Interpretation: `CAL_REPS=5` is worth keeping because it makes thresholding
+more stable. The wider debug output and stride sweep show that the current
+gadget/probe setup still produces clustered nearby bucket hits, not a
+secret-specific `0x53` hit. The next useful increment should change the
+faulting gadget's speculative window/dependency chain rather than only tuning
+threshold or stride.
+
+## Gadget Delay Sweep
+
+`MELTDOWN_US_GADGET_DELAY` was added to insert a small independent ALU chain
+between the faulting secret load and the dependent probe load. The intent is to
+give the dependent probe access more opportunity to execute before the trap
+recovery path squashes the faulting sequence.
+
+BOOM v3, `GADGET_DELAY=16`, `PROBE_STRIDE=64`:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadgetd16-debugonly-r8-a2.log
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i0=271 i1=259 i50=295 i51=255 i52=255 i53=255 i54=255 i55=248 i56=264
+meltdown-us: raw attempt=1 i0=255 i1=260 i50=283 i51=248 i52=248 i53=248 i54=248 i55=248 i56=259
+real 338.97
+```
+
+BOOM v3, `GADGET_DELAY=4`, `PROBE_STRIDE=64`:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-gadgetd4-debugonly-r8-a2.log
+meltdown-us: timing hit=208 miss=273 threshold=240
+meltdown-us: raw attempt=0 i0=261 i1=248 i50=264 i51=248 i52=248 i53=248 i54=255 i55=255 i56=259
+meltdown-us: raw attempt=1 i0=255 i1=265 i50=283 i51=255 i52=255 i53=248 i54=248 i55=255 i56=255
+real 336.83
+```
+
+Both delay points are still negative leakage results. They preserve stable
+fault recovery and timing, but several nearby buckets remain at hit latency.
+The evidence now points away from simple independent delay tuning. The next
+gadget change should alter the dependency chain itself, for example by using a
+dependent address mask/serialization pattern or by testing a different
+permission-fault sequence.
+
+## Mixed-order And Dependency-chain Checks
+
+The raw debug print order was changed to measure `i53` first, followed by
+controls and neighboring buckets. This checks whether earlier adjacent hits
+were produced by sequential `meltdown_probe_time_one()` measurement pollution
+rather than by the faulting gadget.
+
+BOOM v3, mixed-order debug, direct gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-mixed-debugonly-r8-a2.log
+MELTDOWN_US_ATTEMPTS=2
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_PROBE_STRIDE=64
+MELTDOWN_US_GADGET_DELAY=0
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=298 i0=255 i80=285 i1=248 i55=248 i51=248 i56=248 i50=255 i54=259 i52=248
+meltdown-us: raw attempt=1 i53=300 i0=255 i80=255 i1=255 i55=248 i51=248 i56=260 i50=255 i54=248 i52=248
+real 355.45
+```
+
+This is a negative result. When `i53` is measured first it is clearly cold,
+while later controls and neighboring buckets are faster. The earlier
+`i53/i54`-fast observations were therefore not reliable evidence of a
+secret-specific leak.
+
+`MELTDOWN_US_GADGET_VARIANT` was then added:
+
+- `0`: direct dependent probe, `lbu secret; andi; slli; add probe; lb`.
+- `1`: pointer-table dependent probe, `lbu secret; andi; slli 3; ld ptr; lb`.
+
+BOOM v3, pointer-table gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-var1-debugonly-r8-a2.log
+MELTDOWN_US_GADGET_VARIANT=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=271 i0=285 i80=248 i1=314 i55=254 i51=254 i56=248 i50=248 i54=255 i52=248
+meltdown-us: raw attempt=1 i53=271 i0=276 i80=285 i1=259 i55=248 i51=264 i56=248 i50=255 i54=255 i52=248
+real 403.68
+```
+
+This is also negative: the two-level dependency chain does not make bucket
+`0x53` fast on BOOM v3.
+
+Finally, `MELTDOWN_US_TOUCH_SECRET_ON_ARM=1` was added. With this enabled,
+`SYS_meltdown_arm` touches the supervisor-only secret page in S-mode immediately
+before returning to U-mode, so the subsequent faulting load should see a hot
+secret cache line.
+
+BOOM v3, direct gadget plus secret pre-touch:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-touch-debugonly-r8-a2.log
+MELTDOWN_US_TOUCH_SECRET_ON_ARM=1
+meltdown-us: timing hit=209 miss=239 threshold=224
+meltdown-us: raw attempt=0 i53=272 i0=256 i80=256 i1=272 i55=256 i51=256 i56=256 i50=256 i54=256 i52=262
+meltdown-us: raw attempt=1 i53=272 i0=256 i80=249 i1=291 i55=256 i51=249 i56=260 i50=249 i54=249 i52=249
+real 416.85
+```
+
+This remains negative. At this point the miniOS page-table setup, U-mode fault
+recovery, BOOM v3 cycle timing, probe flushing, mixed-order diagnostics,
+alternative dependency chain, and secret pre-touch have all been validated.
+The missing condition is still the Meltdown leak itself: BOOM v3 has not
+forwarded the supervisor-only load value far enough for a secret-indexed probe
+access to leave a clean cache footprint for byte `0x53`.
+
+## U-access Training Then Clear-U Check
+
+`MELTDOWN_US_TRAIN_USER_ACCESS=1` was added to test a different permission
+sequence. For each attempt the user program asks S-mode to set `PTE_U` on the
+secret page, performs a real U-mode load from the same virtual address, then
+asks S-mode to clear `PTE_U` and runs the faulting gadget. This verifies that
+the same VA/data path can return `0x53` immediately before the supervisor-only
+faulting load.
+
+Spike smoke confirms the training read sees the secret and the fault/recovery
+path still exits normally:
+
+```text
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+meltdown-us: training value=0x53
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+SPIKE: PASS
+real 4.82
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-trainu-debugonly-r8-a2.log
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_TOUCH_SECRET_ON_ARM=1
+MELTDOWN_US_GADGET_VARIANT=0
+meltdown-us: timing hit=209 miss=245 threshold=227
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=291 i0=261 i80=256 i1=272 i55=272 i51=256 i56=256 i50=249 i54=260 i52=256
+meltdown-us: raw attempt=1 i53=272 i0=256 i80=256 i1=285 i55=256 i51=256 i56=256 i50=256 i54=249 i52=249
+real 414.88
+```
+
+This is also negative. The trained U-mode load proves the page contents and VA
+translation are correct immediately before the attack, but after `PTE_U` is
+cleared the BOOM v3 faulting load still does not produce a secret-specific
+probe hit for `0x53`.
+
+## Residency Diagnostic
+
+`MELTDOWN_US_DEBUG_RESIDENCY=1` adds `SYS_meltdown_residency`, an S-mode timing
+diagnostic that measures three lines:
+
+- the supervisor-only secret page line;
+- `probe[0x53]`;
+- `probe[0]`.
+
+The user test prints residency once after the U-access training/clear-U
+sequence and once after the faulting gadget. This diagnostic intentionally
+touches `probe[0x53]` and `probe[0]`, so any following raw bucket timing in the
+same attempt is only a reference and cannot be counted as a leak result.
+
+Spike smoke:
+
+```text
+MELTDOWN_US_DEBUG_RESIDENCY=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: training value=0x53
+meltdown-us: residency pre attempt=0 secret=76 p53=68 p0=68
+meltdown-us: residency post attempt=0 secret=76 p53=68 p0=68
+meltdown-us: done
+SPIKE: PASS
+real 4.84
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-resid-debugonly-r8-a1.log
+MELTDOWN_US_DEBUG_RESIDENCY=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: residency pre attempt=0 secret=301 p53=278 p0=245
+meltdown-us: residency post attempt=0 secret=268 p53=227 p0=261
+meltdown-us: raw attempt=0 i53=239 i0=271 i80=254 i1=264 i55=248 i51=248 i56=254 i50=248 i54=248 i52=255
+real 379.95
+```
+
+Interpretation: the U-mode training read still returns `0x53`, but the S-mode
+residency check does not see the secret line as hot on BOOM v3
+(`secret=301` before the gadget, `268` after it). `p53=227` after the gadget is
+not valid leak evidence because the residency syscall itself touched
+`probe[0x53]` before the raw timing print. This strengthens the current
+diagnosis: the remaining blocker is not the user VA content or trap recovery,
+but the specific BOOM v3 behavior around the supervisor-only faulting load and
+the cache/TLB effects of the training/permission-change sequence.
+
+## Clear-U Preload Check
+
+`MELTDOWN_US_PRELOAD_ON_CLEAR=1` extends `SYS_meltdown_set_secret_user`: passing
+argument `2` clears `PTE_U`, executes `sfence.vma`, and immediately touches the
+secret page in S-mode before returning to U-mode. This tests the cleanest
+secret-only preload path without touching any probe bucket before raw timing.
+
+Spike smoke:
+
+```text
+MELTDOWN_US_PRELOAD_ON_CLEAR=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_DEBUG_RESIDENCY=0
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+real 4.83
+```
+
+BOOM v3 with two attempts timed out at the 420-second wrapper timeout after
+printing only attempt 0, but the first attempt was already negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-preloadclear-debugonly-r8-a2.log
+MELTDOWN_US_ATTEMPTS=2
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=290 i0=255 i80=255 i1=248 i55=248 i51=248 i56=259 i50=248 i54=248 i52=248
+real 420.01
+```
+
+BOOM v3 with one attempt exits cleanly and is also negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-preloadclear-debugonly-r8-a1.log
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: timing hit=208 miss=281 threshold=244
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=300 i0=248 i80=248 i1=259 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 391.45
+```
+
+The secret-only preload does not improve leakage. Bucket `0x53` remains colder
+than the controls even when S-mode touches the secret immediately after clearing
+`PTE_U` and before returning to the faulting U-mode gadget.
+
+## User Alias Training
+
+`MELTDOWN_US_TRAIN_ALIAS=1` maps the same secret physical page at a second
+user-readable VA, `0x20001000`, while keeping the attacked VA at `0x20000000`
+supervisor-only. Each attempt reads the alias first, then faults on the
+supervisor-only VA.
+
+Spike smoke:
+
+```text
+meltdown-us: timing hit=68 miss=89 threshold=78
+meltdown-us: alias_va=0x20001000 training value=0x53
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+real 4.83
+```
+
+BOOM v3:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-mmodecycle-cal5-alias-debugonly-r8-a1.log
+MELTDOWN_US_TRAIN_ALIAS=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: alias_va=0x20001000 training value=0x53
+meltdown-us: raw attempt=0 i53=294 i0=259 i80=264 i1=248 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 352.93
+```
+
+This is negative. The user alias proves that the same physical secret page can
+be read as `0x53`, but the supervisor-only faulting VA still does not create a
+fast `probe[0x53]` bucket.
+
+## PMP Access-Fault Variant
+
+`MELTDOWN_US_PMP_FAULT=1` tests a different fault source. In this mode the
+secret VA is mapped user-readable, and an M-mode magic ecall configures PMP as
+three TOR ranges: allow before the secret page, deny the secret page, and allow
+after it. This turns the attack load into a load access fault rather than a
+U/S page-permission fault.
+
+Spike non-timing smoke:
+
+```text
+meltdown-us: fault_mode=pmp-access
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 0.22
+```
+
+Spike timing smoke:
+
+```text
+meltdown-us: fault_mode=pmp-access
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+SPIKE: PASS
+real 0.34
+```
+
+BOOM v3 timing run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-debugonly-r8-a1.log
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_MMODE_CYCLE_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+meltdown-us: fault_mode=pmp-access
+meltdown-us: timing hit=210 miss=274 threshold=242
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+real 420.01
+```
+
+BOOM v3 non-timing smoke:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-smoke-a1.log
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_TIMING=0
+meltdown-us: fault_mode=pmp-access
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+real 300.01
+```
+
+The PMP route works in Spike, including trap recovery, but BOOM v3 does not
+complete after PMP deny in either the timing or non-timing build. This is not a
+successful Meltdown demo. It indicates that the next blocker is BOOM's dynamic
+PMP access-fault path or the miniOS recovery handling for that path on BOOM,
+not the cache timing code.

