@@ -1163,9 +1163,26 @@ meltdown-us: raw attempt=0 i53=261 i0=305 i80=261 i1=291 i55=250 i51=265 i56=250
 real 354.93
 ```
 
+Variant 5 shortens the secret-dependent address chain with a pointer-table
+lookup: `lbu secret`, mask to byte, shift by three, load the bucket pointer,
+then load the selected bucket. Spike smoke passed, but BOOM v3 remains
+negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var5-debugonly-r8-a1.log
+meltdown-us: timing hit=210 miss=305 threshold=257
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=257 i0=308 i80=256 i1=279 i55=250 i51=251 i56=250 i50=250 i54=250 i52=258
+real 376.08
+```
+
+This is not a recovery of `0x53`: `i53` only equals threshold and is slower
+than several neighboring/control buckets.
+
 The current best interpretation is that PMP/M-mode-skip can expose a weak
 younger-load footprint, but BOOM v3 still does not forward the protected secret
-byte through the dependent probe-address chain.
+byte through the tested dependent probe-address chains.
 
 ## Next Step
 
@@ -1185,7 +1202,7 @@ than only increasing delay or timing repetitions. Candidate directions:
    younger loads too early; variant 4 only produces weak near-threshold fixed
    buckets under A-bit faulting, while the PMP/M-mode-skip path can produce a
    fixed-bucket hit but still does not leak through secret-dependent variants 0
-   or 2.
+   2, or 5.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,

