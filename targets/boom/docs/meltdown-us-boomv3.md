@@ -1306,3 +1306,74 @@ The faulting run remains negative: `i53=271` is above the `226` threshold.
 Variant 2 therefore changes the gadget shape and keeps the legal positive
 control working, but it does not make BOOM v3 forward the supervisor-only load
 value far enough to recover byte `0x53`.
+
+## Gadget Variant 3
+
+`MELTDOWN_US_GADGET_VARIANT=3` is a control for the faulting window itself. It
+executes the supervisor-only load first, then touches fixed `probe[0x53]`
+independently of the secret value:
+
+```asm
+lbu  t0, 0(secret_va)
+li   t2, 0x53
+slli t2, t2, PROBE_SHIFT
+add  t2, t2, probe
+mv   t0, t2
+lb   t1, 0(t0)
+```
+
+This is not a Meltdown leak gadget because the probe index is constant. Its
+purpose is to distinguish two failure modes:
+
+1. the faulting load does not forward secret data to dependent operations;
+2. younger loads after the faulting load are squashed or blocked before leaving
+   a cache footprint at all.
+
+Spike smoke passed for both legal no-fault and no-sfence faulting builds.
+
+BOOM v3, legal no-fault control:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-var3b-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=285 threshold=246
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=239 i0=302 i80=254 i1=289 i55=248 i51=248 i56=259 i50=248 i54=248 i52=248
+meltdown-us: done
+real 400.61
+```
+
+The fixed-touch control works legally: `i53=239 < threshold=246`.
+
+BOOM v3, matching no-sfence faulting run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-c1-var3b-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_CLEAR_NO_SFENCE=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=255 i0=286 i80=248 i1=290 i55=263 i51=248 i56=248 i50=248 i54=252 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 378.30
+```
+
+The faulting fixed-touch run is negative: `i53=255` is above the `241`
+threshold. This suggests the current BOOM v3 no-sfence page-permission fault
+path is not merely failing to forward the secret byte; even a younger
+independent load after the faulting supervisor-only load does not leave a
+stable measurable cache footprint. The next direction should therefore change
+the fault source or permission-transition timing, not only the
+secret-dependent address chain.
