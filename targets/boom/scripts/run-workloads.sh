@@ -32,7 +32,7 @@ RUN_TAG="${RUN_TAG:-}"
 
 usage() {
     cat <<USAGE
-Usage: $0 [v1|v2|v4|v5|meltdown|all]
+Usage: $0 [v1|v2|v4|v5|meltdown|meltdown-us|all]
 
 Environment overrides:
   CONFIG=SmallBoomV4Config
@@ -59,7 +59,7 @@ USAGE
 }
 
 case "$ATTACK" in
-    v1|v2|v4|v5|meltdown|all) ;;
+    v1|v2|v4|v5|meltdown|meltdown-us|all) ;;
     -h|--help|help)
         usage
         exit 0
@@ -122,7 +122,8 @@ case "$ATTACK" in
     v4) targets=(v4) ;;
     v5) targets=(v5) ;;
     meltdown) targets=(meltdown) ;;
-    all) targets=(v1 v2 v4 v5 meltdown) ;;
+    meltdown-us) targets=(meltdown-us) ;;
+    all) targets=(v1 v2 v4 v5 meltdown meltdown-us) ;;
 esac
 
 echo "[build] ROOT=$ROOT"
@@ -169,7 +170,7 @@ run_one() {
 
     echo "[status] $name exit_code=$rc"
     echo "[summary] $name"
-    strings -a "$log" | grep -E 'm\[|want|guess|^\[v[45]\]|^\[meltdown\]|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
+    strings -a "$log" | grep -E 'm\[|want|guess|^\[v[45]\]|^\[meltdown|Verilog \$finish|error|assert|FAILED|PASSED' || tail -40 "$log"
 
     return "$rc"
 }
@@ -191,6 +192,9 @@ for target in "${targets[@]}"; do
             ;;
         meltdown)
             run_one "meltdown" "$ROOT/build/bin/meltdown.riscv" || overall=$?
+            ;;
+        meltdown-us)
+            run_one "meltdown-us" "$ROOT/build/bin/meltdown-us.riscv" || overall=$?
             ;;
     esac
 done

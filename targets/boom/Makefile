@@ -86,18 +86,21 @@ CFLAGS := -mcmodel=medany -l -std=gnu99 -O0 -g -fno-common -fno-builtin-printf \
 LDFLAGS := -static -nostdlib -nostartfiles -lgcc
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEP)/$(basename $(notdir $@)).d
 
-PROGRAMS := spectre-v1 spectre-v2 spectre-v4 spectre-v5 meltdown
+PROGRAMS := spectre-v1 spectre-v2 spectre-v4 spectre-v5 meltdown meltdown-us
 SPECTRE_V1_SRC := $(WORKLOADS)/spectre-v1/src/spectre-v1.c
 SPECTRE_V2_SRC := $(WORKLOADS)/spectre-v2/src/spectre-v2.c
 SPECTRE_V4_SRC := $(WORKLOADS)/spectre-v4/src/spectre-v4.c
 SPECTRE_V5_SRC := $(WORKLOADS)/spectre-v5/src/spectre-v5.c
 MELTDOWN_SRC := $(WORKLOADS)/meltdown/src/meltdown.c
+MELTDOWN_US_SRC := $(WORKLOADS)/meltdown-us/src/meltdown-us.c
+MELTDOWN_US_START := $(WORKLOADS)/meltdown-us/src/meltdown-us-start.S
+MELTDOWN_US_GADGET := $(WORKLOADS)/meltdown-us/src/meltdown-us-gadget.S
 SPECTRE_V4_GADGET := $(WORKLOADS)/spectre-v4/src/spectre-v4-gadget.S
 SPECTRE_V5_GADGET := $(WORKLOADS)/spectre-v5/src/spectre-v5-gadget.S
 BINS := $(addprefix $(BIN)/,$(addsuffix .riscv,$(PROGRAMS)))
 DUMPS := $(addprefix $(DMP)/,$(addsuffix .dump,$(PROGRAMS)))
 
-.PHONY: all clean dumps v1 v2 v4 v5 meltdown
+.PHONY: all clean dumps v1 v2 v4 v5 meltdown meltdown-us
 all: $(BINS) $(DUMPS)
 
 v1: $(BIN)/spectre-v1.riscv $(DMP)/spectre-v1.dump
@@ -105,6 +108,7 @@ v2: $(BIN)/spectre-v2.riscv $(DMP)/spectre-v2.dump
 v4: $(BIN)/spectre-v4.riscv $(DMP)/spectre-v4.dump
 v5: $(BIN)/spectre-v5.riscv $(DMP)/spectre-v5.dump
 meltdown: $(BIN)/meltdown.riscv $(DMP)/meltdown.dump
+meltdown-us: $(BIN)/meltdown-us.riscv $(DMP)/meltdown-us.dump
 
 dumps: $(DUMPS)
 
@@ -136,6 +140,18 @@ $(OBJ)/meltdown.o: $(MELTDOWN_SRC)
 	@mkdir -p $(OBJ) $(DEP)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
+$(OBJ)/meltdown-us.o: $(MELTDOWN_US_SRC)
+	@mkdir -p $(OBJ) $(DEP)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
+
+$(OBJ)/meltdown-us-start.o: $(MELTDOWN_US_START)
+	@mkdir -p $(OBJ)
+	$(CC) $(CFLAGS) -D__ASSEMBLY__=1 -c $< -o $@
+
+$(OBJ)/meltdown-us-gadget.o: $(MELTDOWN_US_GADGET)
+	@mkdir -p $(OBJ)
+	$(CC) $(CFLAGS) -D__ASSEMBLY__=1 -c $< -o $@
+
 $(OBJ)/spectre-v4-gadget.o: $(SPECTRE_V4_GADGET)
 	@mkdir -p $(OBJ)
 	$(CC) $(CFLAGS) -D__ASSEMBLY__=1 -c $< -o $@
@@ -155,6 +171,10 @@ $(BIN)/spectre-v4.riscv: $(OBJ)/spectre-v4.o $(OBJ)/spectre-v4-gadget.o $(OBJ)/c
 $(BIN)/spectre-v5.riscv: $(OBJ)/spectre-v5.o $(OBJ)/spectre-v5-gadget.o $(OBJ)/crt.o $(OBJ)/syscalls.o $(OBJ)/stack.o $(LNK)/link.ld
 	@mkdir -p $(BIN)
 	$(CC) -T $(LNK)/link.ld $(LDFLAGS) $(OBJ)/spectre-v5.o $(OBJ)/spectre-v5-gadget.o $(OBJ)/crt.o $(OBJ)/stack.o $(OBJ)/syscalls.o -o $@
+
+$(BIN)/meltdown-us.riscv: $(OBJ)/meltdown-us-start.o $(OBJ)/meltdown-us.o $(OBJ)/meltdown-us-gadget.o $(LNK)/link.ld
+	@mkdir -p $(BIN)
+	$(CC) -T $(LNK)/link.ld $(LDFLAGS) $(OBJ)/meltdown-us-start.o $(OBJ)/meltdown-us.o $(OBJ)/meltdown-us-gadget.o -o $@
 
 $(DMP)/%.dump: $(BIN)/%.riscv
 	@mkdir -p $(DMP)

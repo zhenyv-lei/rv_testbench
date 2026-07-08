@@ -9,23 +9,24 @@ VARIANTS="${VARIANTS:-v1 v2}"
 selector="all"
 for variant in $VARIANTS; do
   case "$variant" in
-    v1|v2|v4|v5|meltdown) ;;
+    v1|v2|v4|v5|meltdown|meltdown-us) ;;
     *) echo "error: unsupported VARIANTS: $VARIANTS" >&2; exit 2 ;;
   esac
 done
-if [[ " $VARIANTS " == *" meltdown "* && "$VARIANTS" != "meltdown" ]]; then
-  echo "error: meltdown must be run as a standalone VARIANTS=meltdown workload" >&2
+if [[ " $VARIANTS " == *" meltdown "* && "$VARIANTS" != "meltdown" ]] ||
+   [[ " $VARIANTS " == *" meltdown-us "* && "$VARIANTS" != "meltdown-us" ]]; then
+  echo "error: meltdown workloads must be run standalone with VARIANTS=meltdown or VARIANTS=meltdown-us" >&2
   exit 2
 fi
 case "$VARIANTS" in
-  "v1"|"v2"|"v4"|"v5"|"meltdown") selector="$VARIANTS" ;;
+  "v1"|"v2"|"v4"|"v5"|"meltdown"|"meltdown-us") selector="$VARIANTS" ;;
 esac
 
 for target in $TARGETS; do
   case "$target" in
     boom)
-      if [[ "$selector" == "meltdown" ]]; then
-        "$ROOT/targets/boom/scripts/run-workloads.sh" meltdown
+      if [[ "$selector" == "meltdown" || "$selector" == "meltdown-us" ]]; then
+        "$ROOT/targets/boom/scripts/run-workloads.sh" "$selector"
       else
         "$ROOT/targets/boom/scripts/calibrate-and-attack.sh" "$selector"
       fi
@@ -33,6 +34,9 @@ for target in $TARGETS; do
     xiangshan)
       if [[ "$selector" == "meltdown" ]]; then
         "$ROOT/targets/xiangshan/scripts/run-meltdown.sh"
+      elif [[ "$selector" == "meltdown-us" ]]; then
+        echo "error: XiangShan toolchain does not yet support VARIANTS=meltdown-us" >&2
+        exit 2
       else
         for variant in $VARIANTS; do
           case "$variant" in
