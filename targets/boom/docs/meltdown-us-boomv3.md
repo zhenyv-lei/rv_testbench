@@ -821,3 +821,73 @@ real 364.30
 `i53=300` is above the `243` threshold and slower than most controls. The
 M-mode skip diagnostic makes recovery possible, but it does not produce a
 secret-specific cache footprint.
+
+## Clear-U Without SFENCE Diagnostic
+
+`MELTDOWN_US_CLEAR_NO_SFENCE=1` tests whether keeping a stale user TLB entry
+after clearing `PTE_U` can create a wider transient window. The sequence is:
+
+1. map the secret page user-readable;
+2. train a user load from the secret VA and confirm the value is `0x53`;
+3. clear `PTE_U` without `sfence.vma`;
+4. run the normal faulting Meltdown-US gadget and raw timing diagnostics.
+
+Spike smoke with the same ELF parameters reaches the expected page-fault
+recovery path:
+
+```text
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_no_sfence=1
+meltdown-us: timing hit=68 miss=89 threshold=78
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=89 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.85
+```
+
+BOOM v3 command:
+
+```bash
+/usr/bin/time -p timeout 7m \
+  /nfs/home/leizhenyu/opt/DUTs/boom/chipyard/sims/verilator/simulator-chipyard.harness-MediumBoomV3Config \
+  +permissive +max-cycles=3500000000 \
+  +loadmem=/tmp/minios-meltdown-work2-build-nosfence-r8-a1/minios.spike.elf \
+  +permissive-off /tmp/minios-meltdown-work2-build-nosfence-r8-a1/minios.spike.elf \
+  2>&1 | tee targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a1.log
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a1.log
+MELTDOWN_US_CLEAR_NO_SFENCE=1
+MELTDOWN_US_TOUCH_SECRET_ON_ARM=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_MMODE_CYCLE_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_ATTEMPTS=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_PROBE_STRIDE=64
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_no_sfence=1
+meltdown-us: timing hit=209 miss=273 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=273 i0=305 i80=297 i1=260 i55=249 i51=255 i56=279 i50=249 i54=253 i52=273
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 370.68
+```
+
+The no-sfence variant confirms that BOOM v3 can train on the secret as a user
+mapping, clear `PTE_U` without an explicit TLB flush, take the expected load
+page fault, and recover. It still does not leak the secret: bucket `0x53`
+measures `273`, above the `241` threshold and equal to/near miss-level control
+buckets.

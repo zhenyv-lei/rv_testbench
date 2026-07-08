@@ -719,6 +719,48 @@ real 364.30
 `i53=300` is slower than the threshold and slower than most controls, so even
 with diagnostic M-mode recovery this is not a successful Meltdown leak.
 
+## Clear-U Without SFENCE Diagnostic
+
+`MELTDOWN_US_CLEAR_NO_SFENCE=1` adds one more U/S page-permission variant:
+after confirming a user-readable secret mapping returns `0x53`, the kernel
+clears `PTE_U` without executing `sfence.vma`, then the user gadget performs
+the normal faulting load. This checks whether a stale translation creates a
+wider BOOM transient window.
+
+Spike reaches the expected recovery path:
+
+```text
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_no_sfence=1
+meltdown-us: timing hit=68 miss=89 threshold=78
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=89 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.85
+```
+
+BOOM v3 also reaches page-fault recovery, but the secret bucket is not a hit:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-debugonly-r8-a1.log
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_no_sfence=1
+meltdown-us: timing hit=209 miss=273 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=273 i0=305 i80=297 i1=260 i55=249 i51=255 i56=279 i50=249 i54=253 i52=273
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 370.68
+```
+
+The no-sfence path is therefore another negative BOOM v3 leakage result:
+`i53=273` is above the `241` threshold.
+
 ## Next Step
 
 The next increment should focus on the remaining leakage mechanism:
