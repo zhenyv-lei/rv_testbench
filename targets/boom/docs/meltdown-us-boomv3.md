@@ -997,3 +997,75 @@ The A-bit page-fault source does not leak either. Bucket `0x53` measures `290`,
 well above the `241` threshold, while several control buckets are near the hit
 range. BOOM v3 is therefore still negative for the tested U/S, no-sfence, A-bit,
 and PMP fault primitives.
+
+## Non-Faulting Positive Controls
+
+Two positive controls were added because the faulting variants were all
+negative. These controls do not prove Meltdown, but they test whether the
+current probe/flush/timing path can see a deliberately hot `probe[0x53]`.
+
+The first control keeps the secret mapping user-readable with
+`MELTDOWN_US_NO_FAULT=1`, then runs the same gadget legally. With one probe
+touch it still did not make bucket `0x53` a hit on BOOM v3:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-debugonly-r8-a1.log
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=1
+meltdown-us: timing hit=209 miss=279 threshold=244
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=267 i0=287 i80=287 i1=256 i55=256 i51=269 i56=256 i50=256 i54=256 i52=256
+meltdown-us: done
+real 376.81
+```
+
+Repeating the final probe touch 16 times also remained inconclusive:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-touch16-debugonly-r8-a1.log
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=209 miss=273 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=256 i0=249 i80=333 i1=261 i55=272 i51=256 i56=256 i50=256 i54=256 i52=262
+meltdown-us: done
+real 354.09
+```
+
+A second, stronger diagnostic was added as `MELTDOWN_US_TOUCH_PROBE_CONTROL=1`.
+It bypasses the secret load and fault gadget completely: after
+`SYS_meltdown_flush_probe`, U-mode directly reads `probe[0x53]` and then raw
+timing measures the selected buckets. Spike verifies the new path:
+
+```text
+MELTDOWN_US_TOUCH_PROBE_CONTROL=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: touch_probe_control=1
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=89 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+real 4.94
+```
+
+The first BOOM v3 attempt with this direct touch-probe control used a
+420-second wrapper and did not reach user mode:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-touchprobe-debugonly-r8-a1.log
+minios booting on core 0
+minios core 0 installed sv39 kpt 0x807f7000 satp 0x80000000000807f7
+[UART] UART0 is here (stdin/stdout).
+real 420.01
+```
+
+A 10-minute rerun was interrupted after it again failed to reach
+`meltdown-us: main begin`. This is recorded as a BOOM run failure/timeout, not
+as a negative cache result.
+
+The important conclusion is that the current BOOM v3 work should first make a
+non-faulting positive control unmistakable. Until direct `probe[0x53]` touches
+produce a stable low-latency `i53`, additional Meltdown fault primitives cannot
+be interpreted cleanly.

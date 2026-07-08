@@ -821,17 +821,70 @@ real 370.38
 `i53=290` is above the `241` threshold, so the accessed-bit fault source also
 does not produce a secret-specific cache footprint on BOOM v3.
 
+## Non-Faulting Positive-Control Diagnostics
+
+The patch now includes two non-faulting controls to separate Meltdown fault
+behavior from the cache measurement path.
+
+`MELTDOWN_US_NO_FAULT=1` keeps the secret page user-readable and runs the same
+secret-indexed gadget legally. BOOM v3 completes, but the selected bucket is
+not clearly hot:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-touch16-debugonly-r8-a1.log
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=209 miss=273 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=256 i0=249 i80=333 i1=261 i55=272 i51=256 i56=256 i50=256 i54=256 i52=262
+meltdown-us: done
+real 354.09
+```
+
+`MELTDOWN_US_TOUCH_PROBE_CONTROL=1` is stronger: it skips the secret load and
+directly touches `probe[0x53]` after flushing the probe array. Spike verifies
+that the control path builds and exits:
+
+```text
+MELTDOWN_US_TOUCH_PROBE_CONTROL=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: touch_probe_control=1
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=89 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+real 4.94
+```
+
+The BOOM v3 run for this direct touch-probe control did not reach user mode
+within the wrapper:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-touchprobe-debugonly-r8-a1.log
+minios booting on core 0
+minios core 0 installed sv39 kpt 0x807f7000 satp 0x80000000000807f7
+[UART] UART0 is here (stdin/stdout).
+real 420.01
+```
+
+A 10-minute retry was interrupted after it again failed to reach
+`meltdown-us: main begin`. This remains a BOOM run/timeout issue for the
+diagnostic ELF, not a cache-timing pass/fail result.
+
 ## Next Step
 
-The next increment should focus on the remaining leakage mechanism:
+The next increment should focus on validating the measurement path before more
+fault variants:
 
-1. Treat U/S page-fault and PMP access-fault tests as negative on BOOM v3 so
-   far. The next useful direction is a different permission/fault primitive or
-   a BOOM-side check of fault delegation and PMP implementation, not simply
-   more repetitions of the same gadget.
-2. Re-run debug-only first, then only run the 256-bucket full scan if bucket
+1. Get `MELTDOWN_US_TOUCH_PROBE_CONTROL=1` to complete on BOOM v3, possibly
+   with a smaller miniOS configuration or a longer controlled run.
+2. Only after direct U-mode `probe[0x53]` touches produce stable low-latency
+   measurements should the U/S, no-sfence, A-bit, or PMP faulting gadgets be
+   reinterpreted.
+3. Re-run debug-only first, then only run the 256-bucket full scan if bucket
    `0x53` is consistently faster than neighboring and control buckets.
 
 The current patch establishes the OS privilege conditions needed for
-Meltdown-US and a working BOOM v3 timing source; the leakage experiment remains
-open.
+Meltdown-US and several fault/recovery variants. The leakage experiment remains
+open because the BOOM v3 positive-control timing path is not yet stable enough
+to interpret faulting leaks.
