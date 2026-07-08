@@ -1149,3 +1149,92 @@ threshold. The current BOOM v3 evidence is therefore:
 
 This narrows the blocker to the faulting/transient execution path, not the
 basic legal gadget or the raw timing syscall.
+
+## Single-Core Parameter Sweep
+
+Two follow-up legal no-fault runs tested whether the single-core positive
+control could be strengthened before spending more BOOM time on the faulting
+path.
+
+First, `MELTDOWN_US_GADGET_DELAY` was inserted between the secret load and the
+probe touch. This did not help. With delay `16`, bucket `0x53` moved above the
+threshold:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-delay16-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_GADGET_DELAY=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=281 threshold=244
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=255 i0=301 i80=248 i1=289 i55=248 i51=252 i56=248 i50=248 i54=248 i52=248
+meltdown-us: done
+real 366.91
+```
+
+With delay `4`, the legal positive control was also negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-delay4-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_GADGET_DELAY=4
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=298 i0=291 i80=317 i1=299 i55=258 i51=254 i56=290 i50=258 i54=248 i52=254
+meltdown-us: done
+real 379.69
+```
+
+Second, the no-delay legal positive control was rerun with
+`MELTDOWN_US_TIME_REPS=16`. This still produced only a weak hit:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-touch16-debugonly-r16-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_GADGET_DELAY=0
+MELTDOWN_US_TIME_REPS=16
+meltdown-us: timing hit=224 miss=299 threshold=261
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=258 i0=269 i80=266 i1=312 i55=276 i51=276 i56=276 i50=276 i54=276 i52=276
+meltdown-us: done
+real 373.84
+```
+
+The `TIME_REPS=16` margin is only three cycles (`258 < 261`), so it does not
+materially improve the earlier `TIME_REPS=8` positive control. The delay sweep
+is worse: both tested delay points break the already weak legal hit. Based on
+that, the matching no-sfence delay and no-sfence `TIME_REPS=16` BOOM runs were
+not launched; the positive control is not yet strong enough to justify the
+extra faulting runs.
+
+The current best baseline remains:
+
+```text
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_DELAY=0
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_PROBE_STRIDE=64
+MELTDOWN_US_MMODE_CYCLE_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+```
+
+This setup is sufficient to observe weak legal positive controls, but BOOM v3
+still has not recovered secret byte `0x53` through the faulting Meltdown-US
+path.

@@ -919,22 +919,61 @@ This changes the diagnosis: the raw timing path and legal secret-indexed
 gadget are weak but functional on BOOM v3. The remaining blocker is the
 faulting/transient path.
 
+## Latest Single-Core Parameter Sweep
+
+The next increment tested whether the single-core legal positive control could
+be strengthened before spending more BOOM time on matching faulting runs.
+
+`MELTDOWN_US_GADGET_DELAY=16` and `MELTDOWN_US_GADGET_DELAY=4` were both tested
+with `CPUS=1`, `MELTDOWN_US_NPROC=4`,
+`MELTDOWN_US_GADGET_TOUCH_REPEATS=16`, `MELTDOWN_US_TIME_REPS=8`, and the legal
+`MELTDOWN_US_NO_FAULT=1` gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-delay16-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=281 threshold=244
+meltdown-us: raw attempt=0 i53=255 i0=301 i80=248 i1=289 i55=248 i51=252 i56=248 i50=248 i54=248 i52=248
+real 366.91
+
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-delay4-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=298 i0=291 i80=317 i1=299 i55=258 i51=254 i56=290 i50=258 i54=248 i52=254
+real 379.69
+```
+
+Both delay runs are negative even though they are legal no-fault controls. The
+independent delay chain therefore does not improve the current gadget; it makes
+the already weak positive control worse.
+
+The no-delay legal positive control was also rerun with
+`MELTDOWN_US_TIME_REPS=16`:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-touch16-debugonly-r16-a1.log
+meltdown-us: timing hit=224 miss=299 threshold=261
+meltdown-us: raw attempt=0 i53=258 i0=269 i80=266 i1=312 i55=276 i51=276 i56=276 i50=276 i54=276 i52=276
+real 373.84
+```
+
+This is still only a weak positive control: bucket `0x53` is three cycles below
+threshold. Because neither delay tuning nor `TIME_REPS=16` produced a stronger
+legal signal, the matching no-sfence delay and no-sfence `TIME_REPS=16` BOOM
+runs were not launched.
+
 ## Next Step
-
-The next increment should focus on increasing and measuring the transient
-window while keeping the single-core setup:
-
-1. Use `CPUS=1`, `MELTDOWN_US_NPROC=4`, and `MELTDOWN_US_GADGET_TOUCH_REPEATS=16`
-   as the baseline because the positive controls complete and show a weak hit.
-2. Try a larger transient window for the faulting path, for example
-   `MELTDOWN_US_GADGET_DELAY=16` or `32`, then compare no-fault versus
-   no-sfence with the same delay.
-3. Repeat the single-core no-fault and no-sfence runs for multiple attempts
-   only after a one-attempt debug run shows `i53` near or below threshold.
-4. Re-run debug-only first, then only run the 256-bucket full scan if bucket
-   `0x53` is consistently faster than neighboring and control buckets.
 
 The current patch establishes the OS privilege conditions needed for
 Meltdown-US and several fault/recovery variants. The leakage experiment remains
 open because BOOM v3 still does not leak through the faulting no-sfence path,
 even though the legal positive controls now show a weak `0x53` hit.
+
+The next useful increment should change the faulting gadget structure rather
+than only increasing delay or timing repetitions. Candidate directions:
+
+1. Test a different dependent address chain that reduces adjacent-bucket
+   pollution while keeping the no-fault positive control measurable.
+2. Add a one-attempt full 256-bucket scan only after the debug-only selected
+   buckets show `i53` clearly below threshold.
+3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,
+   `GADGET_TOUCH_REPEATS=16`, `TIME_REPS=8`, `CAL_REPS=5`, and
+   `PROBE_STRIDE=64` as the current BOOM v3 baseline.
