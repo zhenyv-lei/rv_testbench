@@ -1069,3 +1069,83 @@ The important conclusion is that the current BOOM v3 work should first make a
 non-faulting positive control unmistakable. Until direct `probe[0x53]` touches
 produce a stable low-latency `i53`, additional Meltdown fault primitives cannot
 be interpreted cleanly.
+
+## Single-Core Positive-Control Follow-Up
+
+The direct touch-probe control was rebuilt with a smaller miniOS configuration
+to reduce BOOM startup overhead:
+
+```text
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_TOUCH_PROBE_CONTROL=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+```
+
+Spike passes in this configuration and BOOM v3 now reaches the raw timing
+print:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-touchprobe-c1-debugonly-r8-a1.log
+meltdown-us: touch_probe_control=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=239 i0=290 i80=248 i1=259 i55=248 i51=248 i56=255 i50=248 i54=248 i52=248
+meltdown-us: done
+real 381.59
+```
+
+This is a weak but real positive control: the directly touched `0x53` bucket is
+below the `241` threshold, while most controls are above it. The margin is only
+two cycles, so it is useful as a diagnostic but not yet a robust scoring
+threshold.
+
+The same single-core setup was then run with the legal secret-indexed gadget:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=239 i0=254 i80=248 i1=259 i55=277 i51=248 i56=248 i50=248 i54=248 i52=252
+meltdown-us: done
+real 362.82
+```
+
+This confirms that the legal gadget can index `probe[0x53]` and leave the same
+weak hit on BOOM v3.
+
+Finally, the single-core no-sfence faulting path was run with the same gadget
+strength:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-c1-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_CLEAR_NO_SFENCE=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=208 miss=246 threshold=227
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=271 i0=311 i80=301 i1=266 i55=273 i51=273 i56=274 i50=255 i54=321 i52=310
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 366.62
+```
+
+The no-sfence faulting run is still negative: `i53=271` is above the `227`
+threshold. The current BOOM v3 evidence is therefore:
+
+1. direct `probe[0x53]` touch: weak positive (`239 < 241`);
+2. legal secret-indexed gadget: weak positive (`239 < 241`);
+3. faulting no-sfence gadget: negative (`271 > 227`).
+
+This narrows the blocker to the faulting/transient execution path, not the
+basic legal gadget or the raw timing syscall.

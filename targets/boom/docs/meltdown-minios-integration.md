@@ -871,20 +871,70 @@ A 10-minute retry was interrupted after it again failed to reach
 `meltdown-us: main begin`. This remains a BOOM run/timeout issue for the
 diagnostic ELF, not a cache-timing pass/fail result.
 
+## Single-Core Positive-Control Follow-Up
+
+Using `CPUS=1` and `MELTDOWN_US_NPROC=4` makes the direct touch-probe diagnostic
+complete on BOOM v3:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-touchprobe-c1-debugonly-r8-a1.log
+MELTDOWN_US_TOUCH_PROBE_CONTROL=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=239 i0=290 i80=248 i1=259 i55=248 i51=248 i56=255 i50=248 i54=248 i52=248
+meltdown-us: done
+real 381.59
+```
+
+The legal no-fault secret-indexed gadget produces the same weak `0x53` hit:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-touch16-debugonly-r8-a1.log
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=239 i0=254 i80=248 i1=259 i55=277 i51=248 i56=248 i50=248 i54=248 i52=252
+meltdown-us: done
+real 362.82
+```
+
+The comparable single-core no-sfence faulting run still fails to leak:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-c1-debugonly-r8-a1.log
+MELTDOWN_US_CLEAR_NO_SFENCE=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: timing hit=208 miss=246 threshold=227
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=271 i0=311 i80=301 i1=266 i55=273 i51=273 i56=274 i50=255 i54=321 i52=310
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 366.62
+```
+
+This changes the diagnosis: the raw timing path and legal secret-indexed
+gadget are weak but functional on BOOM v3. The remaining blocker is the
+faulting/transient path.
+
 ## Next Step
 
-The next increment should focus on validating the measurement path before more
-fault variants:
+The next increment should focus on increasing and measuring the transient
+window while keeping the single-core setup:
 
-1. Get `MELTDOWN_US_TOUCH_PROBE_CONTROL=1` to complete on BOOM v3, possibly
-   with a smaller miniOS configuration or a longer controlled run.
-2. Only after direct U-mode `probe[0x53]` touches produce stable low-latency
-   measurements should the U/S, no-sfence, A-bit, or PMP faulting gadgets be
-   reinterpreted.
-3. Re-run debug-only first, then only run the 256-bucket full scan if bucket
+1. Use `CPUS=1`, `MELTDOWN_US_NPROC=4`, and `MELTDOWN_US_GADGET_TOUCH_REPEATS=16`
+   as the baseline because the positive controls complete and show a weak hit.
+2. Try a larger transient window for the faulting path, for example
+   `MELTDOWN_US_GADGET_DELAY=16` or `32`, then compare no-fault versus
+   no-sfence with the same delay.
+3. Repeat the single-core no-fault and no-sfence runs for multiple attempts
+   only after a one-attempt debug run shows `i53` near or below threshold.
+4. Re-run debug-only first, then only run the 256-bucket full scan if bucket
    `0x53` is consistently faster than neighboring and control buckets.
 
 The current patch establishes the OS privilege conditions needed for
 Meltdown-US and several fault/recovery variants. The leakage experiment remains
-open because the BOOM v3 positive-control timing path is not yet stable enough
-to interpret faulting leaks.
+open because BOOM v3 still does not leak through the faulting no-sfence path,
+even though the legal positive controls now show a weak `0x53` hit.

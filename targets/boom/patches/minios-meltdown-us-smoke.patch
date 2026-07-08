@@ -861,8 +861,8 @@ diff -ruN minios/user/init.c minios/user/init.c
  
 diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 --- minios/user/meltdown_us.c	1970-01-01 08:00:00.000000000 +0800
-+++ minios/user/meltdown_us.c	2026-07-09 03:09:15.929538987 +0800
-@@ -0,0 +1,498 @@
++++ minios/user/meltdown_us.c	2026-07-09 03:34:41.247774388 +0800
+@@ -0,0 +1,500 @@
 +#include "user.h"
 +
 +#ifndef MELTDOWN_US_PROBE_STRIDE
@@ -1012,6 +1012,7 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +    asm volatile("fence rw, rw" ::: "memory");
 +}
 +
++#if MELTDOWN_US_TOUCH_PROBE_CONTROL
 +__attribute__((noinline)) static void touch_probe_bucket(int index) {
 +    volatile unsigned char* p = probe + ((unsigned long)index * PROBE_STRIDE);
 +    unsigned char value = 0;
@@ -1022,6 +1023,7 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +    training_sink = training_sink ^ value;
 +    fence_all();
 +}
++#endif
 +
 +#if MELTDOWN_US_TIMING && MELTDOWN_US_DEBUG_RESIDENCY
 +static void print_residency(const char* tag, int attempt) {
