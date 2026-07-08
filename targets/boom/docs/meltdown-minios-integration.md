@@ -1227,6 +1227,24 @@ real 360.87
 Because `i53=260` is above threshold and several control buckets are lower, the
 candidate-compare gadget cannot yet be counted as secret recovery.
 
+Variant 7 removes the branch from that candidate test. It computes a mask from
+`secret == 0x53` and uses it to choose `probe[0x53]` on equality or
+`probe[0x80]` otherwise. Spike smoke passed with the PMP/M-mode-skip build, but
+BOOM v3 again remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var7-debugonly-r8-a1.log
+MELTDOWN_US_GADGET_VARIANT=7
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: raw attempt=0 i53=260 i0=388 i80=257 i1=262 i55=257 i51=257 i56=257 i50=257 i54=257 i52=261
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 400.31
+```
+
+Neither `0x53` nor `0x80` crosses the threshold, so this branchless
+candidate-select gadget also cannot be counted as secret recovery.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
@@ -1245,7 +1263,7 @@ than only increasing delay or timing repetitions. Candidate directions:
    younger loads too early; variant 4 only produces weak near-threshold fixed
    buckets under A-bit faulting, while the PMP/M-mode-skip path can produce a
    fixed-bucket hit but still does not leak through secret-dependent variants 0
-   2, 5, or 6.
+   2, 5, 6, or 7.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,
