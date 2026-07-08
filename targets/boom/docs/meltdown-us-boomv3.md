@@ -94,3 +94,19 @@ frame. A cleaner design is:
 
 This should remove the current C-frame/trampoline ambiguity before running
 larger `MELTDOWN_ATTEMPTS` sweeps.
+
+## miniOS Follow-up
+
+The arch-fuzz miniOS at
+`/nfs/home/leizhenyu/opt/arch-fuzz-add-am-system/generators/system/minios`
+already provides the missing U/S trapframe structure. A first incremental patch
+is recorded in `targets/boom/patches/minios-meltdown-us-smoke.patch`, with
+notes in `targets/boom/docs/meltdown-minios-integration.md`.
+
+That patch has passed a Spike smoke test for:
+
+- mapping a secret page into the user page table with `PTE_U=0`;
+- triggering a U-mode load page fault on that address;
+- recovering through the miniOS trap path back to user code.
+
+It does not yet claim BOOM cache-timing leakage.
