@@ -1540,3 +1540,75 @@ the `241` threshold. Some fixed buckets sit near the low-latency range
 cold. Variant 4 therefore strengthens the earlier conclusion: the current A-bit
 fault source does not provide a stable BOOM v3 younger-load footprint, even
 when several independent fixed probe loads are issued after the fault.
+
+The same widened fixed-touch diagnostic was then run on the PMP/M-mode-skip
+fault source:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var4-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=4
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=210 miss=289 threshold=249
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=241 i0=342 i80=288 i1=250 i55=263 i51=263 i56=250 i50=257 i54=257 i52=263
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 377.81
+```
+
+This is the first BOOM v3 faulting diagnostic in this series where the selected
+fixed bucket crosses threshold (`i53=241 < 249`). It is still not a Meltdown
+leak because `0x53` is hard-coded by variant 4. It does, however, show that the
+PMP/M-mode-skip fault source can sometimes leave a measurable younger-load
+footprint.
+
+That result justified rerunning real secret-dependent gadgets on the same PMP
+fault source. Variant 0, the direct secret-indexed probe chain, remains
+negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var0-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=0
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=260 i0=292 i80=288 i1=257 i55=257 i51=250 i56=261 i50=257 i54=257 i52=261
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 385.80
+```
+
+Variant 2, the secret-indexed selected-line amplification gadget, is also
+negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var2-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_GADGET_VARIANT=2
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=261 i0=305 i80=261 i1=291 i55=250 i51=265 i56=250 i50=250 i54=250 i52=257
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 354.93
+```
+
+So PMP/M-mode-skip is the most promising fault source so far, but only for
+fixed younger-load diagnostics. It still has not propagated the faulting secret
+byte through the dependent address chain strongly enough to recover `0x53`.

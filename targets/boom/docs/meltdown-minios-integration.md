@@ -1125,13 +1125,56 @@ keeps the BOOM v3 accessed-bit path negative and suggests the fault window is
 still too narrow or too aggressively squashed for a stable younger-load cache
 footprint.
 
+The widened fixed-touch diagnostic is more promising on the PMP/M-mode-skip
+fault source:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var4-debugonly-r8-a1.log
+meltdown-us: timing hit=210 miss=289 threshold=249
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=241 i0=342 i80=288 i1=250 i55=263 i51=263 i56=250 i50=257 i54=257 i52=263
+real 377.81
+```
+
+This is a positive fault-window diagnostic (`i53=241 < 249`), but it is not a
+Meltdown leak because variant 4 hard-codes the selected bucket.
+
+Two real secret-dependent PMP/M-mode-skip runs were then tried. Direct variant
+0 remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var0-debugonly-r8-a1.log
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=260 i0=292 i80=288 i1=257 i55=257 i51=250 i56=261 i50=257 i54=257 i52=261
+real 385.80
+```
+
+Selected-line amplification variant 2 is also negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-c1-var2-debugonly-r8-a1.log
+meltdown-us: timing hit=210 miss=276 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=261 i0=305 i80=261 i1=291 i55=250 i51=265 i56=250 i50=250 i54=250 i52=257
+real 354.93
+```
+
+The current best interpretation is that PMP/M-mode-skip can expose a weak
+younger-load footprint, but BOOM v3 still does not forward the protected secret
+byte through the dependent probe-address chain.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
 Meltdown-US and several fault/recovery variants. The leakage experiment remains
 open because BOOM v3 still does not leak through the tested U/S, no-sfence,
-accessed-bit, or PMP fault paths, even though the legal positive controls now
-show a weak `0x53` hit.
+accessed-bit, or PMP secret-dependent fault paths, even though the legal
+positive controls and the PMP variant 4 fault-window diagnostic now show weak
+`0x53` hits.
 
 The next useful increment should change the faulting gadget structure rather
 than only increasing delay or timing repetitions. Candidate directions:
@@ -1140,8 +1183,9 @@ than only increasing delay or timing repetitions. Candidate directions:
    BOOM resolves the fault relative to younger loads. The variant 3 diagnostic
    suggests the current page-permission no-sfence and accessed-bit paths squash
    younger loads too early; variant 4 only produces weak near-threshold fixed
-   buckets under A-bit faulting, and the PMP/M-mode-skip path is closer but
-   still not a hit.
+   buckets under A-bit faulting, while the PMP/M-mode-skip path can produce a
+   fixed-bucket hit but still does not leak through secret-dependent variants 0
+   or 2.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,
