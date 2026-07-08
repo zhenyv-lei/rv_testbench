@@ -745,3 +745,79 @@ complete after PMP deny in either the timing or non-timing build. This is not a
 successful Meltdown demo. It indicates that the next blocker is BOOM's dynamic
 PMP access-fault path or the miniOS recovery handling for that path on BOOM,
 not the cache timing code.
+
+## PMP Fault Delegation Diagnostic
+
+`MELTDOWN_US_PMP_SIMPLE_FAULT=1` removes the transient gadget and executes only
+one `lbu` from the PMP-denied secret VA after arming recovery.
+`MELTDOWN_US_TRAP_DEBUG=1` prints the trap metadata when the S-mode recovery
+branch is reached.
+
+Spike reaches S-mode `usertrap()` as expected:
+
+```text
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: trap recover scause=0x5 sepc=0x2c stval=0x20000000 recover=0x30
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.87
+```
+
+BOOM v3 without M-mode skip does not print the S-mode trap line:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-simple-debug-a1.log
+MELTDOWN_US_PMP_SIMPLE_FAULT=1
+MELTDOWN_US_TRAP_DEBUG=1
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+real 300.01
+```
+
+`MELTDOWN_US_MMODE_FAULT_SKIP=1` adds a diagnostic M-mode machinevec branch
+that skips load access faults reaching M-mode. With that enabled, the same
+simple fault completes on BOOM v3:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-simple-mskip-a1.log
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 290.37
+```
+
+Interpretation: the earlier BOOM PMP hang is the M-mode unknown-trap loop.
+Spike delegates the PMP load access fault to S-mode, while this BOOM v3 run
+does not reach the S-mode `usertrap()` recovery branch.
+
+The full transient PMP debug-only run with M-mode skip reaches measurement on
+BOOM v3, but it is still negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-debugonly-r8-a1.log
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_MMODE_CYCLE_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+meltdown-us: timing hit=211 miss=275 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=300 i0=258 i80=289 i1=263 i55=251 i51=258 i56=258 i50=258 i54=258 i52=258
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 364.30
+```
+
+`i53=300` is above the `243` threshold and slower than most controls. The
+M-mode skip diagnostic makes recovery possible, but it does not produce a
+secret-specific cache footprint.

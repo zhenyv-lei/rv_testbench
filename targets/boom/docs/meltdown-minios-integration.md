@@ -648,14 +648,85 @@ it is not yet a BOOM v3 Meltdown leakage demo. On BOOM v3 the dynamic PMP deny
 is reached, but the following U-mode access-fault recovery does not complete
 within the tested wrapper limits.
 
+Follow-up diagnostics add two guarded knobs:
+
+- `MELTDOWN_US_PMP_SIMPLE_FAULT=1`: arm recovery and execute only one `lbu`
+  from the PMP-denied secret VA, without the transient probe gadget.
+- `MELTDOWN_US_MMODE_FAULT_SKIP=1`: if a load access fault reaches M-mode
+  instead of S-mode, skip the faulting instruction in `machinevec`. This is a
+  diagnostic recovery path, not the normal miniOS usertrap path.
+
+Spike simple-fault debug confirms the expected S-mode trap:
+
+```text
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: trap recover scause=0x5 sepc=0x2c stval=0x20000000 recover=0x30
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.87
+```
+
+BOOM v3 simple-fault debug without M-mode skip still stops at `pmp deny armed`
+and never prints the S-mode trap line:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-simple-debug-a1.log
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+real 300.01
+```
+
+BOOM v3 simple-fault debug with M-mode skip completes:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-simple-mskip-a1.log
+meltdown-us: pmp_simple_fault=1
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 290.37
+```
+
+This proves the previous BOOM hang was the M-mode unknown-trap loop, not the
+cache-timing or transient gadget code. In this BOOM configuration, the PMP load
+access fault is not reaching the S-mode `usertrap()` path even though the same
+ELF does on Spike.
+
+With M-mode skip enabled, the full transient PMP debug-only run reaches raw
+timing on BOOM v3 but is still negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mskip-debugonly-r8-a1.log
+MELTDOWN_US_MMODE_FAULT_SKIP=1
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+meltdown-us: timing hit=211 miss=275 threshold=243
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=300 i0=258 i80=289 i1=263 i55=251 i51=258 i56=258 i50=258 i54=258 i52=258
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 364.30
+```
+
+`i53=300` is slower than the threshold and slower than most controls, so even
+with diagnostic M-mode recovery this is not a successful Meltdown leak.
+
 ## Next Step
 
 The next increment should focus on the remaining leakage mechanism:
 
-1. Isolate why BOOM v3 does not return from the PMP access-fault path even
-   though Spike does. A useful next probe is to print `scause/stval/sepc` in
-   the `meltdown_recover_epc` branch or to create a non-speculative U-mode PMP
-   fault smoke that only executes one `lbu` and immediately recovers.
+1. Treat U/S page-fault and PMP access-fault tests as negative on BOOM v3 so
+   far. The next useful direction is a different permission/fault primitive or
+   a BOOM-side check of fault delegation and PMP implementation, not simply
+   more repetitions of the same gadget.
 2. Re-run debug-only first, then only run the 256-bucket full scan if bucket
    `0x53` is consistently faster than neighboring and control buckets.
 
