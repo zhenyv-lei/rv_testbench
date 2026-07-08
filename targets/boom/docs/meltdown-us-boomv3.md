@@ -1041,6 +1041,54 @@ well above the `241` threshold, while several control buckets are near the hit
 range. BOOM v3 is therefore still negative for the tested U/S, no-sfence, A-bit,
 and PMP fault primitives.
 
+The same accessed-bit fault source was then tested with
+`MELTDOWN_US_GADGET_VARIANT=3`, the fixed `probe[0x53]` fault-window
+diagnostic. This asks whether the A-bit fault permits any younger independent
+load to leave a cache footprint.
+
+Spike smoke passes:
+
+```text
+MELTDOWN_US_CLEAR_ACCESSED=1
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 reaches raw timing but remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-c1-var3-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_CLEAR_ACCESSED=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=255 i0=281 i80=309 i1=313 i55=309 i51=259 i56=285 i50=258 i54=273 i52=279
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 374.84
+```
+
+This fixed-touch A-bit run is also negative: `i53=255` is above the `241`
+threshold. Compared with the no-sfence fixed-touch result (`255 > 241`) and
+the PMP/M-mode-skip fixed-touch result (`241 > 226`), the accessed-bit source
+does not widen the BOOM v3 transient window enough to produce a reliable
+younger-load cache footprint.
+
 ## Non-Faulting Positive Controls
 
 Two positive controls were added because the faulting variants were all
@@ -1421,8 +1469,8 @@ stable measurable cache footprint. The next direction should therefore change
 the fault source or permission-transition timing, not only the
 secret-dependent address chain.
 
-The PMP/M-mode-skip run above tests one such alternate fault source with the
-same fixed-touch diagnostic. It also remains negative (`i53=241 >
-threshold=226`), although it is closer to threshold than the page-permission
-variant. BOOM v3 therefore still has not shown a reliable cache footprint from
-a younger load after the fault in either tested fault source.
+The PMP/M-mode-skip and accessed-bit runs above test two alternate fault
+sources with the same fixed-touch diagnostic. They also remain negative
+(`i53=241 > threshold=226` for PMP and `i53=255 > threshold=241` for A-bit).
+BOOM v3 therefore still has not shown a reliable cache footprint from a younger
+load after the fault in any tested fault source.

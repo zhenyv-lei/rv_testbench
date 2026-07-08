@@ -853,6 +853,46 @@ real 370.38
 `i53=290` is above the `241` threshold, so the accessed-bit fault source also
 does not produce a secret-specific cache footprint on BOOM v3.
 
+The accessed-bit source was also combined with
+`MELTDOWN_US_GADGET_VARIANT=3`, the fixed `probe[0x53]` fault-window
+diagnostic. This variant is not a leakage gadget; it checks whether a younger
+independent load can leave a measurable footprint after the A-bit fault.
+
+Spike smoke passes:
+
+```text
+MELTDOWN_US_CLEAR_ACCESSED=1
+MELTDOWN_US_GADGET_VARIANT=3
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+```
+
+BOOM v3 reaches raw timing but remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-c1-var3-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=255 i0=281 i80=309 i1=313 i55=309 i51=259 i56=285 i50=258 i54=273 i52=279
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 374.84
+```
+
+The fixed-touch A-bit diagnostic is still negative because `i53=255` is above
+the `241` threshold. Alongside the no-sfence fixed-touch diagnostic
+(`255 > 241`) and the PMP/M-mode-skip fixed-touch diagnostic (`241 > 226`),
+this indicates that the tested BOOM v3 fault sources are squashing or blocking
+younger loads before they leave a stable cache footprint.
+
 ## Non-Faulting Positive-Control Diagnostics
 
 The patch now includes two non-faulting controls to separate Meltdown fault
@@ -1056,16 +1096,18 @@ the supervisor-only faulting load.
 
 The current patch establishes the OS privilege conditions needed for
 Meltdown-US and several fault/recovery variants. The leakage experiment remains
-open because BOOM v3 still does not leak through the faulting no-sfence path,
-even though the legal positive controls now show a weak `0x53` hit.
+open because BOOM v3 still does not leak through the tested U/S, no-sfence,
+accessed-bit, or PMP fault paths, even though the legal positive controls now
+show a weak `0x53` hit.
 
 The next useful increment should change the faulting gadget structure rather
 than only increasing delay or timing repetitions. Candidate directions:
 
 1. Test a different fault source or permission transition that changes when
    BOOM resolves the fault relative to younger loads. The variant 3 diagnostic
-   suggests the current page-permission no-sfence path squashes younger loads
-   too early; the PMP/M-mode-skip path is closer but still not a hit.
+   suggests the current page-permission no-sfence and accessed-bit paths squash
+   younger loads too early; the PMP/M-mode-skip path is closer but still not a
+   hit.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,
