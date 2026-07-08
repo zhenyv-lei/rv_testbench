@@ -960,6 +960,34 @@ threshold. Because neither delay tuning nor `TIME_REPS=16` produced a stronger
 legal signal, the matching no-sfence delay and no-sfence `TIME_REPS=16` BOOM
 runs were not launched.
 
+`MELTDOWN_US_GADGET_VARIANT=2` was then added. It keeps the direct
+secret-indexed bucket selection but touches four offsets inside the selected
+64-byte cache line. The goal was to amplify the cache footprint without
+touching neighboring buckets.
+
+Spike smoke passed for both legal no-fault and no-sfence faulting builds.
+
+BOOM v3 legal no-fault control:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-var2-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: raw attempt=0 i53=239 i0=248 i80=285 i1=264 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+real 400.65
+```
+
+BOOM v3 matching no-sfence faulting run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-c1-var2-touch16-debugonly-r8-a1.log
+meltdown-us: timing hit=208 miss=245 threshold=226
+meltdown-us: raw attempt=0 i53=271 i0=324 i80=248 i1=260 i55=263 i51=308 i56=284 i50=255 i54=310 i52=274
+real 363.87
+```
+
+Variant 2 preserves the weak legal positive control, but the faulting run is
+still negative because `i53=271` is above the `226` threshold.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
@@ -970,8 +998,8 @@ even though the legal positive controls now show a weak `0x53` hit.
 The next useful increment should change the faulting gadget structure rather
 than only increasing delay or timing repetitions. Candidate directions:
 
-1. Test a different dependent address chain that reduces adjacent-bucket
-   pollution while keeping the no-fault positive control measurable.
+1. Test a different fault source or permission transition that changes when
+   BOOM resolves the fault relative to the dependent probe load.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,

