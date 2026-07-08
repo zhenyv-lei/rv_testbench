@@ -1,7 +1,7 @@
 diff -ruN minios/Makefile minios/Makefile
 --- minios/Makefile	2026-07-08 16:57:35.212795000 +0800
-+++ minios/Makefile	2026-07-09 01:35:20.450196279 +0800
-@@ -48,6 +48,35 @@
++++ minios/Makefile	2026-07-09 01:52:10.641663492 +0800
+@@ -48,6 +48,36 @@
  PASS_SENTINEL ?= init: all tests passed
  SYSTEM_FUZZ ?= 0
  SYSTEM_FUZZ_COUNT ?= 32
@@ -29,6 +29,7 @@ diff -ruN minios/Makefile minios/Makefile
 +MELTDOWN_US_PRELOAD_ON_CLEAR ?= 0
 +MELTDOWN_US_TRAIN_ALIAS ?= 0
 +MELTDOWN_US_CLEAR_NO_SFENCE ?= 0
++MELTDOWN_US_CLEAR_ACCESSED ?= 0
 +MELTDOWN_US_PMP_FAULT ?= 0
 +MELTDOWN_US_PMP_SIMPLE_FAULT ?= 0
 +MELTDOWN_US_TRAP_DEBUG ?= 0
@@ -37,7 +38,7 @@ diff -ruN minios/Makefile minios/Makefile
  
  COMMON_SRCS := entry.S trampoline.S kernelvec.S main.c kprintf.c mem.c kalloc.c vm.c proc.c spinlock.c sleeplock.c swtch.S fs.c file.c pipe.c syscall.c trap.c
  SPIKE_SRCS  := $(COMMON_SRCS) platform_spike.c block_spike_htif.c
-@@ -79,8 +108,10 @@
+@@ -79,8 +109,10 @@
  USER_PROGS := init sh runall
  SYSFUZZ_PROGS := $(shell i=0; while [ $$i -lt $(SYSTEM_FUZZ_COUNT) ]; do printf 'sysfuzz_%03d ' $$i; i=$$((i+1)); done)
  USER_PROGS += $(SYSFUZZ_PROGS)
@@ -49,7 +50,7 @@ diff -ruN minios/Makefile minios/Makefile
  endif
  USER_BINS  := $(addprefix $(BUILD_DIR)/user/,$(USER_PROGS))
  USER_ASMS  := $(addsuffix .asm,$(USER_BINS))
-@@ -106,7 +137,38 @@
+@@ -106,7 +138,39 @@
  ifeq ($(SYSTEM_FUZZ),1)
  SYSTEM_FUZZ_CFLAGS += -DINIT_USER_TEST -DMINIOS_RUN_SYSFUZZ -DSYSFUZZ_COUNT=$(SYSTEM_FUZZ_COUNT)
  endif
@@ -80,6 +81,7 @@ diff -ruN minios/Makefile minios/Makefile
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PRELOAD_ON_CLEAR=$(MELTDOWN_US_PRELOAD_ON_CLEAR)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TRAIN_ALIAS=$(MELTDOWN_US_TRAIN_ALIAS)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_CLEAR_NO_SFENCE=$(MELTDOWN_US_CLEAR_NO_SFENCE)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_CLEAR_ACCESSED=$(MELTDOWN_US_CLEAR_ACCESSED)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PMP_FAULT=$(MELTDOWN_US_PMP_FAULT)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PMP_SIMPLE_FAULT=$(MELTDOWN_US_PMP_SIMPLE_FAULT)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TRAP_DEBUG=$(MELTDOWN_US_TRAP_DEBUG)
@@ -351,8 +353,8 @@ diff -ruN minios/proc.c minios/proc.c
      p->sleep_on_chan = NULL; p->killed = 0; p->exit_state = 0; p->state = PCB_UNUSED;
 diff -ruN minios/syscall.c minios/syscall.c
 --- minios/syscall.c	2026-07-08 16:57:35.215469000 +0800
-+++ minios/syscall.c	2026-07-09 01:35:31.716234947 +0800
-@@ -9,10 +9,54 @@
++++ minios/syscall.c	2026-07-09 01:52:41.350768891 +0800
+@@ -9,10 +9,57 @@
  #include "inc/riscv.h"
  #include "inc/type.h"
  #include "inc/vm.h"
@@ -399,6 +401,9 @@ diff -ruN minios/syscall.c minios/syscall.c
 +#ifndef MELTDOWN_US_CLEAR_NO_SFENCE
 +#define MELTDOWN_US_CLEAR_NO_SFENCE 0
 +#endif
++#ifndef MELTDOWN_US_CLEAR_ACCESSED
++#define MELTDOWN_US_CLEAR_ACCESSED 0
++#endif
 +
 +static uchar meltdown_secret_page[PGSIZE] __attribute__((aligned(PGSIZE)));
 +static uchar meltdown_eviction[MELTDOWN_EVICTION_BYTES + MELTDOWN_L1_SET_SPAN_BYTES]
@@ -407,7 +412,7 @@ diff -ruN minios/syscall.c minios/syscall.c
  
  static uint64 argraw(int n) {
      struct proc* p = myproc();
-@@ -430,6 +474,348 @@
+@@ -430,6 +477,351 @@
      return 0;
  }
  
@@ -534,10 +539,13 @@ diff -ruN minios/syscall.c minios/syscall.c
 +        return (uint64)-1;
 +    }
 +
-+    if (user == 1) {
++    if (user == 1 || user == 4) {
 +        *pte = *pte | RISCV_PTE_U;
 +    } else {
 +        *pte = *pte & ~RISCV_PTE_U;
++    }
++    if (user == 4) {
++        *pte = *pte & ~RISCV_PTE_A;
 +    }
 +    if (user != 3) {
 +        sfence_vma();
@@ -756,7 +764,7 @@ diff -ruN minios/syscall.c minios/syscall.c
  static uint64 sys_mmap(void) {
      uint64 addr;
      uint64 length;
-@@ -512,6 +898,17 @@
+@@ -512,6 +904,17 @@
      [SYS_mremap] sys_mremap,
      [SYS_mkdir] sys_mkdir,
      [SYS_getprocinfo] sys_getprocinfo,
@@ -847,8 +855,8 @@ diff -ruN minios/user/init.c minios/user/init.c
  
 diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 --- minios/user/meltdown_us.c	1970-01-01 08:00:00.000000000 +0800
-+++ minios/user/meltdown_us.c	2026-07-09 01:35:45.226281313 +0800
-@@ -0,0 +1,419 @@
++++ minios/user/meltdown_us.c	2026-07-09 01:52:51.249802868 +0800
+@@ -0,0 +1,427 @@
 +#include "user.h"
 +
 +#ifndef MELTDOWN_US_PROBE_STRIDE
@@ -913,6 +921,9 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +#endif
 +#ifndef MELTDOWN_US_CLEAR_NO_SFENCE
 +#define MELTDOWN_US_CLEAR_NO_SFENCE 0
++#endif
++#ifndef MELTDOWN_US_CLEAR_ACCESSED
++#define MELTDOWN_US_CLEAR_ACCESSED 0
 +#endif
 +#ifndef MELTDOWN_US_PMP_FAULT
 +#define MELTDOWN_US_PMP_FAULT 0
@@ -1129,6 +1140,9 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +#if MELTDOWN_US_CLEAR_NO_SFENCE
 +    printf("meltdown-us: clear_no_sfence=1\n");
 +#endif
++#if MELTDOWN_US_CLEAR_ACCESSED
++    printf("meltdown-us: clear_accessed=1\n");
++#endif
 +#endif
 +
 +#if MELTDOWN_US_TIMING
@@ -1180,6 +1194,8 @@ diff -ruN minios/user/meltdown_us.c minios/user/meltdown_us.c
 +        if (meltdown_set_secret_user(2) < 0) {
 +#elif MELTDOWN_US_CLEAR_NO_SFENCE
 +        if (meltdown_set_secret_user(3) < 0) {
++#elif MELTDOWN_US_CLEAR_ACCESSED
++        if (meltdown_set_secret_user(4) < 0) {
 +#else
 +        if (meltdown_set_secret_user(0) < 0) {
 +#endif

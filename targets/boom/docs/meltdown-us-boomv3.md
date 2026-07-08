@@ -891,3 +891,59 @@ mapping, clear `PTE_U` without an explicit TLB flush, take the expected load
 page fault, and recover. It still does not leak the secret: bucket `0x53`
 measures `273`, above the `241` threshold and equal to/near miss-level control
 buckets.
+
+## Clear Accessed-Bit Diagnostic
+
+`MELTDOWN_US_CLEAR_ACCESSED=1` tests a different page-fault source. The secret
+mapping stays user-readable, but after a successful user training load the
+kernel clears `PTE_A` and executes `sfence.vma`. The next user load faults
+because the accessed bit is clear, not because the U/S permission check fails.
+This checks whether BOOM v3 forwards data farther for a permission-allowed
+load that faults on page-table state.
+
+Spike verifies that the A-bit path traps and recovers:
+
+```text
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.90
+```
+
+BOOM v3 result:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-debugonly-r8-a1.log
+MELTDOWN_US_CLEAR_ACCESSED=1
+MELTDOWN_US_TOUCH_SECRET_ON_ARM=1
+MELTDOWN_US_TRAIN_USER_ACCESS=1
+MELTDOWN_US_TIMING=1
+MELTDOWN_US_MMODE_CYCLE_TIMING=1
+MELTDOWN_US_DEBUG_TIMES=1
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_ATTEMPTS=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_PROBE_STRIDE=64
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=290 i0=248 i80=254 i1=307 i55=252 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 370.38
+```
+
+The A-bit page-fault source does not leak either. Bucket `0x53` measures `290`,
+well above the `241` threshold, while several control buckets are near the hit
+range. BOOM v3 is therefore still negative for the tested U/S, no-sfence, A-bit,
+and PMP fault primitives.

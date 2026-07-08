@@ -761,6 +761,48 @@ real 370.68
 The no-sfence path is therefore another negative BOOM v3 leakage result:
 `i53=273` is above the `241` threshold.
 
+## Clear Accessed-Bit Diagnostic
+
+`MELTDOWN_US_CLEAR_ACCESSED=1` keeps the secret page user-readable, then clears
+`PTE_A` after the training load and flushes the TLB. The following user load
+faults on the accessed bit rather than on U/S permission. This is intended to
+test whether a permission-allowed load that faults on page-table state creates
+a different BOOM transient window.
+
+Spike confirms that the variant traps and recovers:
+
+```text
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: fault recovery ok
+meltdown-us: done
+SPIKE: PASS
+real 4.90
+```
+
+BOOM v3 reaches the same recovery point but remains negative:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-clearA-debugonly-r8-a1.log
+meltdown-us: fault_mode=page-permission
+meltdown-us: clear_accessed=1
+meltdown-us: timing hit=208 miss=274 threshold=241
+meltdown-us: training value=0x53
+meltdown-us: trap recover scause=0xd sepc=0x34 stval=0x20000000 recover=0x52
+meltdown-us: raw attempt=0 i53=290 i0=248 i80=254 i1=307 i55=252 i51=248 i56=248 i50=248 i54=248 i52=248
+meltdown-us: fault recovery ok
+meltdown-us: debug-only done secret=0x53
+meltdown-us: done
+real 370.38
+```
+
+`i53=290` is above the `241` threshold, so the accessed-bit fault source also
+does not produce a secret-specific cache footprint on BOOM v3.
+
 ## Next Step
 
 The next increment should focus on the remaining leakage mechanism:
