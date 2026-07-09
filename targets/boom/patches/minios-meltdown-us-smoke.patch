@@ -1,7 +1,7 @@
 diff -ruN minios/Makefile minios/Makefile
 --- minios/Makefile	2026-07-08 16:57:35.212795000 +0800
-+++ minios/Makefile	2026-07-09 02:51:31.292884758 +0800
-@@ -48,6 +48,39 @@
++++ minios/Makefile	2026-07-09 06:24:59.086845238 +0800
+@@ -48,6 +48,40 @@
  PASS_SENTINEL ?= init: all tests passed
  SYSTEM_FUZZ ?= 0
  SYSTEM_FUZZ_COUNT ?= 32
@@ -37,11 +37,12 @@ diff -ruN minios/Makefile minios/Makefile
 +MELTDOWN_US_PMP_SIMPLE_FAULT ?= 0
 +MELTDOWN_US_TRAP_DEBUG ?= 0
 +MELTDOWN_US_MMODE_FAULT_SKIP ?= 0
++MELTDOWN_US_MMODE_DIRECT_RECOVER ?= 0
 +BOOT_DEBUG ?= 1
  
  COMMON_SRCS := entry.S trampoline.S kernelvec.S main.c kprintf.c mem.c kalloc.c vm.c proc.c spinlock.c sleeplock.c swtch.S fs.c file.c pipe.c syscall.c trap.c
  SPIKE_SRCS  := $(COMMON_SRCS) platform_spike.c block_spike_htif.c
-@@ -79,8 +112,10 @@
+@@ -79,8 +113,10 @@
  USER_PROGS := init sh runall
  SYSFUZZ_PROGS := $(shell i=0; while [ $$i -lt $(SYSTEM_FUZZ_COUNT) ]; do printf 'sysfuzz_%03d ' $$i; i=$$((i+1)); done)
  USER_PROGS += $(SYSFUZZ_PROGS)
@@ -53,7 +54,7 @@ diff -ruN minios/Makefile minios/Makefile
  endif
  USER_BINS  := $(addprefix $(BUILD_DIR)/user/,$(USER_PROGS))
  USER_ASMS  := $(addsuffix .asm,$(USER_BINS))
-@@ -106,7 +141,42 @@
+@@ -106,7 +142,43 @@
  ifeq ($(SYSTEM_FUZZ),1)
  SYSTEM_FUZZ_CFLAGS += -DINIT_USER_TEST -DMINIOS_RUN_SYSFUZZ -DSYSFUZZ_COUNT=$(SYSTEM_FUZZ_COUNT)
  endif
@@ -92,6 +93,7 @@ diff -ruN minios/Makefile minios/Makefile
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_PMP_SIMPLE_FAULT=$(MELTDOWN_US_PMP_SIMPLE_FAULT)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_TRAP_DEBUG=$(MELTDOWN_US_TRAP_DEBUG)
 +MELTDOWN_US_CFLAGS += -DMELTDOWN_US_MMODE_FAULT_SKIP=$(MELTDOWN_US_MMODE_FAULT_SKIP)
++MELTDOWN_US_CFLAGS += -DMELTDOWN_US_MMODE_DIRECT_RECOVER=$(MELTDOWN_US_MMODE_DIRECT_RECOVER)
 +endif
 +CFLAGS := $(BASE_CFLAGS) -DNCPU=$(CPUS) $(VM_MODE_CFLAG) -DBOOT_DEBUG=$(BOOT_DEBUG) $(SYSTEM_FUZZ_CFLAGS) $(MELTDOWN_US_CFLAGS)
  SPIKE_CFLAGS := $(CFLAGS) -DMINIOS_SPIKE_FS_IMAGE_PATH=\"$(SPIKE_FS_IMG)\"
@@ -99,19 +101,23 @@ diff -ruN minios/Makefile minios/Makefile
  NEMU_CFLAGS := $(BASE_CFLAGS) -DNCPU=1 $(VM_MODE_CFLAG) $(SYSTEM_FUZZ_CFLAGS) -DMINIOS_PHYSMEM_MB=16 -DNPROC=128 -DNINODE=64 -DNFILE=256
 diff -ruN minios/entry.S minios/entry.S
 --- minios/entry.S	2026-07-08 16:57:35.210776000 +0800
-+++ minios/entry.S	2026-07-09 01:18:16.308681099 +0800
-@@ -18,6 +18,10 @@
++++ minios/entry.S	2026-07-09 10:09:52.922160218 +0800
+@@ -18,6 +18,14 @@
      li t0, 0x800
      csrs mstatus, t0
      li t0, 0xffff
 +#if MELTDOWN_US_MMODE_CYCLE_TIMING || MELTDOWN_US_PMP_FAULT
 +    li t1, ~(1 << 9)
 +    and t0, t0, t1
++#if MELTDOWN_US_MMODE_DIRECT_RECOVER
++    li t1, ~(1 << 5)
++    and t0, t0, t1
++#endif
 +#endif
      csrw medeleg, t0
      # Delegate supervisor/user interrupts, but keep machine timer interrupts
      # in M-mode so timervec can re-arm mtimecmp and notify S-mode via SSIP.
-@@ -30,6 +34,10 @@
+@@ -30,6 +38,10 @@
      csrw pmpaddr0, t0
      li t0, 0x0f
      csrw pmpcfg0, t0
@@ -122,7 +128,7 @@ diff -ruN minios/entry.S minios/entry.S
      mret
  
  timerinit:
-@@ -74,19 +82,37 @@
+@@ -74,19 +86,40 @@
      sd t2, 32(t1)
      csrw mscratch, t1
  
@@ -150,7 +156,10 @@ diff -ruN minios/entry.S minios/entry.S
 +#if MELTDOWN_US_PMP_FAULT
 +    li a2, 9
 +    beq a1, a2, pmp_service
-+#if MELTDOWN_US_MMODE_FAULT_SKIP
++#if MELTDOWN_US_MMODE_DIRECT_RECOVER
++    li a2, 5
++    beq a1, a2, mmode_direct_recover
++#elif MELTDOWN_US_MMODE_FAULT_SKIP
 +    li a2, 5
 +    beq a1, a2, mmode_fault_skip
 +#endif
@@ -162,7 +171,7 @@ diff -ruN minios/entry.S minios/entry.S
      ld a1, 24(a0)
      ld a2, 32(a0)
      ld a3, 0(a1)
-@@ -102,6 +128,86 @@
+@@ -102,6 +135,100 @@
      csrrw a0, mscratch, a0
      mret
  
@@ -231,7 +240,21 @@ diff -ruN minios/entry.S minios/entry.S
 +1:
 +    j 1b
 +
-+#if MELTDOWN_US_MMODE_FAULT_SKIP
++#if MELTDOWN_US_MMODE_DIRECT_RECOVER
++mmode_direct_recover:
++    la a1, meltdown_mmode_recover_epc
++    ld a2, 0(a1)
++    beqz a2, 1b
++    sd zero, 0(a1)
++    csrw mepc, a2
++    mv a2, a0
++    ld a3, 16(a2)
++    csrw mscratch, a2
++    ld a1, 0(a2)
++    ld a2, 8(a2)
++    csrrw a0, mscratch, a0
++    mret
++#elif MELTDOWN_US_MMODE_FAULT_SKIP
 +mmode_fault_skip:
 +    csrr a1, mepc
 +    addi a1, a1, 4
@@ -359,8 +382,8 @@ diff -ruN minios/proc.c minios/proc.c
      p->sleep_on_chan = NULL; p->killed = 0; p->exit_state = 0; p->state = PCB_UNUSED;
 diff -ruN minios/syscall.c minios/syscall.c
 --- minios/syscall.c	2026-07-08 16:57:35.215469000 +0800
-+++ minios/syscall.c	2026-07-09 01:52:41.350768891 +0800
-@@ -9,10 +9,57 @@
++++ minios/syscall.c	2026-07-09 06:24:59.594846982 +0800
+@@ -9,10 +9,61 @@
  #include "inc/riscv.h"
  #include "inc/type.h"
  #include "inc/vm.h"
@@ -410,15 +433,19 @@ diff -ruN minios/syscall.c minios/syscall.c
 +#ifndef MELTDOWN_US_CLEAR_ACCESSED
 +#define MELTDOWN_US_CLEAR_ACCESSED 0
 +#endif
++#ifndef MELTDOWN_US_MMODE_DIRECT_RECOVER
++#define MELTDOWN_US_MMODE_DIRECT_RECOVER 0
++#endif
 +
 +static uchar meltdown_secret_page[PGSIZE] __attribute__((aligned(PGSIZE)));
 +static uchar meltdown_eviction[MELTDOWN_EVICTION_BYTES + MELTDOWN_L1_SET_SPAN_BYTES]
 +    __attribute__((aligned(MELTDOWN_L1_SET_SPAN_BYTES)));
 +static volatile uchar meltdown_sink;
++uint64 meltdown_mmode_recover_epc;
  
  static uint64 argraw(int n) {
      struct proc* p = myproc();
-@@ -430,6 +477,351 @@
+@@ -430,6 +481,354 @@
      return 0;
  }
  
@@ -513,6 +540,9 @@ diff -ruN minios/syscall.c minios/syscall.c
 +        return (uint64)-1;
 +    }
 +    myproc()->meltdown_recover_epc = recover_pc;
++#if MELTDOWN_US_MMODE_DIRECT_RECOVER
++    meltdown_mmode_recover_epc = recover_pc;
++#endif
 +#if MELTDOWN_US_TOUCH_SECRET_ON_ARM
 +    meltdown_sink = meltdown_sink ^ *(volatile uchar*)meltdown_secret_page;
 +    meltdown_fence_all();
@@ -770,7 +800,7 @@ diff -ruN minios/syscall.c minios/syscall.c
  static uint64 sys_mmap(void) {
      uint64 addr;
      uint64 length;
-@@ -512,6 +904,17 @@
+@@ -512,6 +911,17 @@
      [SYS_mremap] sys_mremap,
      [SYS_mkdir] sys_mkdir,
      [SYS_getprocinfo] sys_getprocinfo,

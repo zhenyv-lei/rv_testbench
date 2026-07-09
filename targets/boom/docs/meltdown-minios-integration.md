@@ -1245,6 +1245,30 @@ real 400.31
 Neither `0x53` nor `0x80` crosses the threshold, so this branchless
 candidate-select gadget also cannot be counted as secret recovery.
 
+The patch now also includes `MELTDOWN_US_MMODE_DIRECT_RECOVER=1`. In this mode,
+PMP load access faults are not delegated to S-mode; `machinevec` reads the
+recovery PC registered by `meltdown_arm()` and writes it directly to `mepc`.
+This tests whether the S-mode `usertrap()` recovery path was erasing an
+otherwise visible transient footprint.
+
+Spike smoke passed with the direct secret-indexed gadget. An initial BOOM v3
+prototype completed with a cold target bucket, but that prototype did not
+restore user `a0` through the `mscratch` swap path before `mret`; after fixing
+that restore in the patch, BOOM v3 reaches calibration but times out before raw
+timing output:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mdirect-c1-var0-debugonly-r8-a1-fix.log
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_DIRECT_RECOVER=1
+MELTDOWN_US_GADGET_VARIANT=0
+meltdown-us: timing hit=210 miss=282 threshold=246
+real 420.01
+```
+
+The corrected direct M-mode recovery path therefore does not recover the secret
+byte and is not yet a usable measurement path on BOOM v3.
+
 ## Next Step
 
 The current patch establishes the OS privilege conditions needed for
@@ -1263,7 +1287,8 @@ than only increasing delay or timing repetitions. Candidate directions:
    younger loads too early; variant 4 only produces weak near-threshold fixed
    buckets under A-bit faulting, while the PMP/M-mode-skip path can produce a
    fixed-bucket hit but still does not leak through secret-dependent variants 0
-   2, 5, 6, or 7.
+   2, 5, 6, or 7, and corrected direct M-mode recovery currently times out
+   before raw measurement.
 2. Add a one-attempt full 256-bucket scan only after the debug-only selected
    buckets show `i53` clearly below threshold.
 3. Keep `CPUS=1`, `MELTDOWN_US_NPROC=4`, `GADGET_DELAY=0`,

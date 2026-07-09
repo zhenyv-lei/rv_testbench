@@ -1784,3 +1784,60 @@ real 400.31
 This is also negative. Both candidate buckets are above threshold
 (`i53=260`, `i80=257`, threshold `243`), so the branchless compare/select chain
 does not produce a recoverable secret-dependent cache footprint on BOOM v3.
+
+## M-Mode Direct Recovery Diagnostic
+
+`MELTDOWN_US_MMODE_DIRECT_RECOVER=1` changes the PMP fault recovery path. The
+earlier PMP experiments delegated U-mode load access faults to S-mode, then
+`usertrap()` rewrote the saved user `epc` to `meltdown_us_recover_label`. The
+direct-recovery mode keeps load access faults in M-mode and has `machinevec`
+rewrite `mepc` directly to the user-registered recovery PC.
+
+The intent is to test whether the S-mode trap path itself destroys the cache
+footprint before measurement. This is a fault/recovery timing diagnostic, not a
+new leakage gadget.
+
+Spike smoke passed with the direct secret-indexed gadget:
+
+```text
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_FAULT_SKIP=0
+MELTDOWN_US_MMODE_DIRECT_RECOVER=1
+MELTDOWN_US_GADGET_VARIANT=0
+MELTDOWN_US_DEBUG_ONLY=1
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: fault_mode=pmp-access
+meltdown-us: timing hit=68 miss=68 threshold=68
+meltdown-us: pmp training value=0x53
+meltdown-us: pmp deny armed
+meltdown-us: raw attempt=0 i53=68 i0=68 i80=68 i1=68 i55=68 i51=68 i56=68 i50=68 i54=68 i52=68
+meltdown-us: done
+SPIKE: PASS
+```
+
+An initial BOOM v3 run of this mode completed with a cold target bucket, but
+that prototype did not restore user `a0` through the `mscratch` swap path before
+`mret`, so it is not used as evidence for the current patch. After fixing that
+register restore, BOOM v3 no longer reaches the raw timing print within the
+7-minute timeout:
+
+```text
+log: targets/boom/logs/MediumBoomV3Config-minios-meltdown-us-pmp-mdirect-c1-var0-debugonly-r8-a1-fix.log
+CPUS=1
+MELTDOWN_US_NPROC=4
+MELTDOWN_US_PMP_FAULT=1
+MELTDOWN_US_MMODE_DIRECT_RECOVER=1
+MELTDOWN_US_GADGET_VARIANT=0
+MELTDOWN_US_TIME_REPS=8
+MELTDOWN_US_CAL_REPS=5
+MELTDOWN_US_ATTEMPTS=1
+meltdown-us: timing hit=210 miss=282 threshold=246
+real 420.01
+```
+
+The corrected direct-recovery path therefore is not a successful leakage path
+and is not yet a usable replacement for the S-mode recovery path. It currently
+gets through setup and timing calibration on BOOM v3 but does not complete the
+faulting attempt plus raw measurement within 420 seconds.
