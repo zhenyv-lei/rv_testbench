@@ -14,8 +14,10 @@ attack_same_rounds="${ATTACK_SAME_ROUNDS:-5}"
 train_times="${TRAIN_TIMES:-10}"
 timeout_value="${TIMEOUT:-20m}"
 use_fixed_threshold="${USE_FIXED_CACHE_HIT_THRESHOLD:-0}"
-direct_service_call="${DIRECT_SERVICE_CALL:-1}"
-tag="${TAG:-priv-sz${secret_sz}-r${attack_same_rounds}-t${train_times}-direct${direct_service_call}}"
+direct_service_call="${DIRECT_SERVICE_CALL:-0}"
+use_am_cte="${USE_AM_CTE:-0}"
+attacker_mpp="${ATTACKER_MPP:-0}"
+tag="${TAG:-priv-sz${secret_sz}-r${attack_same_rounds}-t${train_times}-direct${direct_service_call}-mpp${attacker_mpp}}"
 
 cppflags=(
   "-DCACHE_HIT_THRESHOLD=$threshold"
@@ -24,6 +26,8 @@ cppflags=(
   "-DATTACK_SAME_ROUNDS=$attack_same_rounds"
   "-DTRAIN_TIMES=$train_times"
   "-DDIRECT_SERVICE_CALL=$direct_service_call"
+  "-DUSE_AM_CTE=$use_am_cte"
+  "-DATTACKER_MPP=$attacker_mpp"
 )
 
 build_log="$LOG_DIR/spectre-v1-priv-build-${tag}.log"
