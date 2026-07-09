@@ -34,6 +34,10 @@
 #define PROBE_CANDIDATES 62
 #endif
 
+#ifndef FULL_BYTE_PROBE
+#define FULL_BYTE_PROBE 0
+#endif
+
 #ifndef FLUSH_LINES
 #define FLUSH_LINES PROBE_ENTRIES
 #endif
@@ -279,7 +283,11 @@ static U_TEXT uint64_t candidate_value(uint64_t idx)
 
 static U_TEXT uint64_t candidate_probe_value(uint64_t idx)
 {
+#if FULL_BYTE_PROBE
+  return ((idx * 167u) + 13u) & 255u;
+#else
   return candidate_value((idx * 17u + 13u) % 62u);
+#endif
 }
 
 static U_TEXT int is_training_value(uint64_t value)
